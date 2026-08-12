@@ -1,0 +1,27 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.ipynb_checkpoints/
+*.log
+*.tmp
+*.cache
+.DS_Store
+Thumbs.db
+
+# Large/generated project data
+full_dataset/
+data/raw/
+data/cache/
+outputs/
+
+# Model training caches
+*.npz
+!05_model_training/weights/**/scalers.npz
+
+# ANSYS generated/project files can be large; add specific reproducible files explicitly.
+*.wbpj
+*.wbjn
+*.cas.h5
+*.dat.h5
