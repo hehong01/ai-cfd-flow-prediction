@@ -25,3 +25,6 @@ outputs/
 *.wbjn
 *.cas.h5
 *.dat.h5
+
+# Temporary lock files
+~$*

@@ -1,1 +1,7 @@
-# Python dependencies will be finalized after each pipeline stage is reconstructed.
+# Direct Python dependencies used by the currently implemented pipeline.
+# ANSYS SpaceClaim / Fluent are external applications and are not installed by pip.
+
+numpy
+opencv-python
+mediapipe
+trimesh
