@@ -736,7 +736,24 @@ class NormalizedDGCNNDataset(
             ]
 
         # ---------------------------------------------------------
+        # Preserve raw physical xyz BEFORE feature standardization.
+        #
+        # The first DGCNN graph must use physical Euclidean geometry.
+        # Standardizing x/y/z independently would distort that metric.
+        # ---------------------------------------------------------
+
+        raw_xyz = (
+            x[
+                :,
+                :3,
+            ]
+            .clone()
+        )
+
+        # ---------------------------------------------------------
         # Standardization
+        #
+        # Edge values still use normalized [x,y,z,velocity].
         # ---------------------------------------------------------
 
         x = (
@@ -749,7 +766,7 @@ class NormalizedDGCNNDataset(
             - self.target_mean
         ) / self.target_std
 
-        return x, y
+        return x, y, raw_xyz
 
 
 # =====================================================================
@@ -816,6 +833,7 @@ def train_one_epoch(
     for batch_index, (
         x_batch,
         y_batch,
+        raw_xyz_batch,
     ) in enumerate(
         loader,
         start=1,
@@ -847,8 +865,14 @@ def train_one_epoch(
             set_to_none=True
         )
 
+        raw_xyz_batch = raw_xyz_batch.to(
+            device,
+            non_blocking=True,
+        )
+
         prediction = model(
-            x_batch
+            x_batch,
+            first_knn_xyz=raw_xyz_batch,
         )
 
         loss = criterion(
@@ -934,6 +958,7 @@ def evaluate_loss(
     for batch_index, (
         x_batch,
         y_batch,
+        raw_xyz_batch,
     ) in enumerate(
         loader,
         start=1,
@@ -957,8 +982,14 @@ def evaluate_loss(
             non_blocking=True,
         )
 
+        raw_xyz_batch = raw_xyz_batch.to(
+            device,
+            non_blocking=True,
+        )
+
         prediction = model(
-            x_batch
+            x_batch,
+            first_knn_xyz=raw_xyz_batch,
         )
 
         loss = criterion(
@@ -1020,6 +1051,7 @@ def predict_loader(
     for batch_index, (
         x_batch,
         y_batch,
+        raw_xyz_batch,
     ) in enumerate(
         loader,
         start=1,
@@ -1038,8 +1070,14 @@ def predict_loader(
             non_blocking=True,
         )
 
+        raw_xyz_batch = raw_xyz_batch.to(
+            device,
+            non_blocking=True,
+        )
+
         prediction = model(
-            x_batch
+            x_batch,
+            first_knn_xyz=raw_xyz_batch,
         )
 
         y_true_np = (
@@ -1126,6 +1164,9 @@ def save_checkpoint(
         ),
         "point_count": (
             point_count
+        ),
+        "first_knn_space": (
+            "raw_xyz"
         ),
         "epoch": (
             epoch

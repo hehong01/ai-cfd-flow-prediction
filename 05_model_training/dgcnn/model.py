@@ -522,6 +522,7 @@ class EdgeConv(nn.Module):
     def forward(
         self,
         features: torch.Tensor,
+        knn_features: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
         Parameters
@@ -548,13 +549,40 @@ class EdgeConv(nn.Module):
                 f"{features.shape[-1]}."
             )
 
+        # ---------------------------------------------------------
+        # The graph feature space may differ from the edge-value
+        # feature space.
+        #
+        # EdgeConv 1:
+        #   k-NN          -> raw physical xyz
+        #   edge values   -> normalized [x, y, z, velocity]
+        #
+        # EdgeConv 2 / 3:
+        #   k-NN and edge values both use learned features.
+        # ---------------------------------------------------------
+
+        if knn_features is None:
+            knn_features = features
+
+        if knn_features.ndim != 3:
+            raise ValueError(
+                f"Expected knn_features shape (B, N, G), "
+                f"found {tuple(knn_features.shape)}."
+            )
+
+        if knn_features.shape[:2] != features.shape[:2]:
+            raise ValueError(
+                "features and knn_features must have the same "
+                "batch size and point count."
+            )
+
         # =========================================================
         # 1. Dynamic k-NN
         # =========================================================
 
         neighbor_indices = (
             exact_knn_chunked(
-                features,
+                knn_features,
                 k=self.k,
                 chunk_size=(
                     self.knn_chunk_size
@@ -756,6 +784,7 @@ class DGCNNRegressor(nn.Module):
     def forward(
         self,
         x: torch.Tensor,
+        first_knn_xyz: torch.Tensor,
     ) -> torch.Tensor:
         """
         Forward pass.
@@ -786,6 +815,24 @@ class DGCNNRegressor(nn.Module):
                 f"{x.shape[-1]}."
             )
 
+        if first_knn_xyz.ndim != 3:
+            raise ValueError(
+                f"Expected first_knn_xyz shape (B, N, 3), "
+                f"found {tuple(first_knn_xyz.shape)}."
+            )
+
+        if first_knn_xyz.shape[-1] != 3:
+            raise ValueError(
+                f"Expected raw xyz dimension 3, found "
+                f"{first_knn_xyz.shape[-1]}."
+            )
+
+        if first_knn_xyz.shape[:2] != x.shape[:2]:
+            raise ValueError(
+                "x and first_knn_xyz must have the same "
+                "batch size and point count."
+            )
+
         batch_size, num_points, _ = (
             x.shape
         )
@@ -799,7 +846,8 @@ class DGCNNRegressor(nn.Module):
         # =========================================================
 
         x1 = self.edgeconv1(
-            x
+            x,
+            knn_features=first_knn_xyz,
         )
 
         # =========================================================
@@ -994,12 +1042,22 @@ def main():
         requires_grad=True,
     )
 
+    # Raw xyz is used only to construct the first neighbor graph.
+    raw_xyz = (
+        x[
+            ...,
+            :3,
+        ]
+        .detach()
+        .clone()
+    )
+
     # =================================================================
     # Test 1: k-NN
     # =================================================================
 
     indices = exact_knn_chunked(
-        x,
+        raw_xyz,
         k=k,
         chunk_size=64,
     )
@@ -1073,7 +1131,8 @@ def main():
     )
 
     edge_output = edgeconv(
-        x
+        x,
+        knn_features=raw_xyz,
     )
 
     print()
@@ -1109,7 +1168,8 @@ def main():
     )
 
     prediction = model(
-        x
+        x,
+        first_knn_xyz=raw_xyz,
     )
 
     print()

@@ -259,6 +259,7 @@ def evaluate(
         "k",
         "epoch",
         "val_loss",
+        "first_knn_space",
     )
 
     for key in required_keys:
@@ -307,6 +308,19 @@ def evaluate(
         ]
     )
 
+    checkpoint_first_knn_space = str(
+        checkpoint[
+            "first_knn_space"
+        ]
+    )
+
+    if checkpoint_first_knn_space != "raw_xyz":
+        raise RuntimeError(
+            "Unsupported first k-NN graph space in checkpoint: "
+            f"{checkpoint_first_knn_space!r}. "
+            "Expected 'raw_xyz'."
+        )
+
     # -----------------------------------------------------------------
     # kNN chunk size does not alter learned weights or architecture.
     #
@@ -353,6 +367,11 @@ def evaluate(
     print(
         f"k               : "
         f"{checkpoint_k}"
+    )
+
+    print(
+        f"First kNN graph : "
+        f"{checkpoint_first_knn_space}"
     )
 
     print(
