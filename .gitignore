@@ -18,7 +18,6 @@ outputs/
 
 # Model training caches
 *.npz
-!05_model_training/weights/**/scalers.npz
 
 # ANSYS generated/project files can be large; add specific reproducible files explicitly.
 *.wbpj
@@ -34,3 +33,6 @@ outputs/
 
 # Fluent temporary run files
 03_fluent_cfd/_runs/
+
+# Generated model checkpoints
+05_model_training/weights/**/*.pt
