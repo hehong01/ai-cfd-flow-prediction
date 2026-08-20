@@ -28,3 +28,10 @@ outputs/
 
 # Temporary lock files
 ~$*
+
+# Generated DGCNN preprocessing artifacts
+04_cfd_dataset/fps_indices_*.npz
+
+03_fluent_cfd/_runs/
+# Fluent temporary run files
+03_fluent_cfd/_runs/
