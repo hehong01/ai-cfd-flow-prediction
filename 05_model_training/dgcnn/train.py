@@ -36,6 +36,10 @@ Normalization:
 Outputs:
     weights/dgcnn/best_model.pt
     weights/dgcnn/scalers.npz
+    weights/dgcnn/last_checkpoint.pt
+
+The last checkpoint stores the latest completed epoch and optimizer
+state so interrupted Colab training can resume without starting over.
 """
 
 from __future__ import annotations
@@ -134,6 +138,11 @@ DEFAULT_MODEL_PATH = (
 DEFAULT_SCALER_PATH = (
     WEIGHT_DIR
     / "scalers.npz"
+)
+
+DEFAULT_CHECKPOINT_PATH = (
+    WEIGHT_DIR
+    / "last_checkpoint.pt"
 )
 
 
@@ -1179,9 +1188,222 @@ def save_checkpoint(
         ),
     }
 
-    torch.save(
+    atomic_torch_save(
         checkpoint,
         path,
+    )
+
+
+def atomic_torch_save(
+    obj,
+    path: Path,
+) -> None:
+    """
+    Atomically replace a torch checkpoint.
+
+    The object is first written to a temporary file in the same
+    directory and then renamed over the destination. This reduces
+    the chance of leaving a partially written checkpoint if the
+    runtime is interrupted while saving to Google Drive.
+    """
+
+    path = Path(path)
+
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    temp_path = path.with_name(
+        path.name + ".tmp"
+    )
+
+    torch.save(
+        obj,
+        temp_path,
+    )
+
+    temp_path.replace(
+        path
+    )
+
+
+def save_training_checkpoint(
+    path: Path,
+    model: DGCNNRegressor,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    train_loss: float,
+    val_loss: float,
+    best_val_loss: float,
+    best_epoch: int,
+    epochs_without_improvement: int,
+    point_count: int,
+    batch_size: int,
+) -> None:
+    """
+    Save the latest completed training state.
+
+    Unlike best_model.pt, this file is overwritten after EVERY
+    completed epoch and contains optimizer / early-stopping state.
+    """
+
+    checkpoint = {
+        "checkpoint_type": "training_resume",
+        "model_name": "DGCNNRegressor",
+        "input_dim": model.input_dim,
+        "output_dim": model.output_dim,
+        "k": model.k,
+        "knn_chunk_size": model.knn_chunk_size,
+        "point_count": point_count,
+        "first_knn_space": "raw_xyz",
+        "epoch": epoch,
+        "train_loss": float(train_loss),
+        "val_loss": float(val_loss),
+        "best_val_loss": float(best_val_loss),
+        "best_epoch": int(best_epoch),
+        "epochs_without_improvement": int(
+            epochs_without_improvement
+        ),
+        "batch_size": int(batch_size),
+        "learning_rate": float(
+            optimizer.param_groups[0]["lr"]
+        ),
+        "weight_decay": float(
+            optimizer.param_groups[0]["weight_decay"]
+        ),
+        "model_state_dict": model.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+    }
+
+    atomic_torch_save(
+        checkpoint,
+        path,
+    )
+
+
+def load_training_checkpoint(
+    path: Path,
+    model: DGCNNRegressor,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+    expected_point_count: int,
+    expected_k: int,
+):
+    """
+    Restore model, optimizer and early-stopping state.
+
+    Returns:
+        start_epoch
+        best_val_loss
+        best_epoch
+        epochs_without_improvement
+        checkpoint
+    """
+
+    checkpoint = torch.load(
+        path,
+        map_location=device,
+        weights_only=False,
+    )
+
+    required_keys = (
+        "checkpoint_type",
+        "model_name",
+        "input_dim",
+        "k",
+        "point_count",
+        "first_knn_space",
+        "epoch",
+        "best_val_loss",
+        "best_epoch",
+        "epochs_without_improvement",
+        "model_state_dict",
+        "optimizer_state_dict",
+    )
+
+    for key in required_keys:
+        if key not in checkpoint:
+            raise KeyError(
+                "Resume checkpoint is missing required key: "
+                f"{key}"
+            )
+
+    if checkpoint["checkpoint_type"] != "training_resume":
+        raise RuntimeError(
+            "Unsupported checkpoint type: "
+            f"{checkpoint['checkpoint_type']!r}"
+        )
+
+    if checkpoint["model_name"] != "DGCNNRegressor":
+        raise RuntimeError(
+            "Resume checkpoint model mismatch: "
+            f"{checkpoint['model_name']!r}"
+        )
+
+    if int(checkpoint["input_dim"]) != model.input_dim:
+        raise RuntimeError(
+            "Resume checkpoint input dimension mismatch."
+        )
+
+    if int(checkpoint["k"]) != int(expected_k):
+        raise RuntimeError(
+            "Resume checkpoint k mismatch: "
+            f"checkpoint={checkpoint['k']}, "
+            f"requested={expected_k}"
+        )
+
+    if int(checkpoint["point_count"]) != int(
+        expected_point_count
+    ):
+        raise RuntimeError(
+            "Resume checkpoint point-count mismatch: "
+            f"checkpoint={checkpoint['point_count']}, "
+            f"requested={expected_point_count}"
+        )
+
+    if checkpoint["first_knn_space"] != "raw_xyz":
+        raise RuntimeError(
+            "Resume checkpoint first k-NN space mismatch: "
+            f"{checkpoint['first_knn_space']!r}"
+        )
+
+    model.load_state_dict(
+        checkpoint["model_state_dict"]
+    )
+
+    optimizer.load_state_dict(
+        checkpoint["optimizer_state_dict"]
+    )
+
+    completed_epoch = int(
+        checkpoint["epoch"]
+    )
+
+    start_epoch = (
+        completed_epoch + 1
+    )
+
+    best_val_loss = float(
+        checkpoint["best_val_loss"]
+    )
+
+    best_epoch = int(
+        checkpoint["best_epoch"]
+    )
+
+    epochs_without_improvement = int(
+        checkpoint[
+            "epochs_without_improvement"
+        ]
+    )
+
+    return (
+        start_epoch,
+        best_val_loss,
+        best_epoch,
+        epochs_without_improvement,
+        checkpoint,
     )
 
 
@@ -1235,28 +1457,48 @@ def train(
         args.scaler_path
     ).resolve()
 
-    if not args.overwrite:
+    checkpoint_path = Path(
+        args.checkpoint_path
+    ).resolve()
+
+    if args.resume:
+
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(
+                "Resume checkpoint not found:\n"
+                f"{checkpoint_path}"
+            )
+
+        if not scaler_path.exists():
+            raise FileNotFoundError(
+                "Scaler required for resume was not found:\n"
+                f"{scaler_path}"
+            )
+
+    elif not args.overwrite:
 
         existing = [
             path
             for path in (
                 model_path,
                 scaler_path,
+                checkpoint_path,
             )
             if path.exists()
         ]
 
         if existing:
 
-            text = "\n".join(
+            existing_text = "\n".join(
                 str(path)
                 for path in existing
             )
 
             raise FileExistsError(
                 "Training output already exists:\n"
-                f"{text}\n\n"
-                "Use --overwrite to replace."
+                f"{existing_text}\n\n"
+                "Use --overwrite for a fresh run or "
+                "--resume to continue from --checkpoint-path."
             )
 
     # -----------------------------------------------------------------
@@ -1355,6 +1597,26 @@ def train(
             f"{args.point_limit} "
             "(DEBUG ONLY)"
         )
+
+    print(
+        f"Best model path : "
+        f"{model_path}"
+    )
+
+    print(
+        f"Scaler path     : "
+        f"{scaler_path}"
+    )
+
+    print(
+        f"Resume checkpoint: "
+        f"{checkpoint_path}"
+    )
+
+    print(
+        f"Resume mode     : "
+        f"{args.resume}"
+    )
 
     print("=" * 78)
 
@@ -1457,21 +1719,41 @@ def train(
         )
 
     # =================================================================
-    # Fit DGCNN scaler
+    # Scaler
     # =================================================================
 
-    scaler = fit_dgcnn_scaler(
-        train_base
-    )
+    if args.resume:
 
-    scaler.save(
-        scaler_path
-    )
+        print()
+        print("=" * 78)
+        print("LOAD EXISTING DGCNN SCALER FOR RESUME")
+        print("=" * 78)
 
-    print(
-        f"Scaler saved : "
-        f"{scaler_path}"
-    )
+        scaler = CFDScaler.load(
+            scaler_path
+        )
+
+        scaler.print_statistics()
+
+        print(
+            f"Scaler loaded : "
+            f"{scaler_path}"
+        )
+
+    else:
+
+        scaler = fit_dgcnn_scaler(
+            train_base
+        )
+
+        scaler.save(
+            scaler_path
+        )
+
+        print(
+            f"Scaler saved : "
+            f"{scaler_path}"
+        )
 
     # =================================================================
     # Normalized datasets
@@ -1582,6 +1864,83 @@ def train(
     )
 
     # =================================================================
+    # Fresh state or resume state
+    # =================================================================
+
+    if args.resume:
+
+        (
+            start_epoch,
+            best_val_loss,
+            best_epoch,
+            epochs_without_improvement,
+            resume_checkpoint,
+        ) = load_training_checkpoint(
+            checkpoint_path,
+            model,
+            optimizer,
+            device,
+            expected_point_count=(
+                actual_point_count
+            ),
+            expected_k=args.k,
+        )
+
+        print()
+        print("=" * 78)
+        print("RESUME TRAINING STATE")
+        print("=" * 78)
+
+        print(
+            f"Completed epoch   : "
+            f"{resume_checkpoint['epoch']}"
+        )
+
+        print(
+            f"Resume from epoch : "
+            f"{start_epoch}"
+        )
+
+        print(
+            f"Best epoch        : "
+            f"{best_epoch}"
+        )
+
+        print(
+            f"Best val loss     : "
+            f"{best_val_loss:.8f}"
+        )
+
+        print(
+            f"No-improve count  : "
+            f"{epochs_without_improvement}"
+        )
+
+        print(
+            f"Optimizer LR      : "
+            f"{optimizer.param_groups[0]['lr']}"
+        )
+
+        print(
+            f"Checkpoint        : "
+            f"{checkpoint_path}"
+        )
+
+        print("=" * 78)
+
+    else:
+
+        start_epoch = 1
+
+        best_val_loss = float(
+            "inf"
+        )
+
+        best_epoch = 0
+
+        epochs_without_improvement = 0
+
+    # =================================================================
     # Training
     # =================================================================
 
@@ -1590,20 +1949,12 @@ def train(
     print("TRAINING")
     print("=" * 78)
 
-    best_val_loss = float(
-        "inf"
-    )
-
-    best_epoch = 0
-
-    epochs_without_improvement = 0
-
     training_start = (
         time.perf_counter()
     )
 
     for epoch in range(
-        1,
+        start_epoch,
         args.epochs + 1,
     ):
 
@@ -1715,6 +2066,35 @@ def train(
             )
 
             torch.cuda.reset_peak_memory_stats()
+
+        # ---------------------------------------------------------
+        # Persist latest completed epoch for interruption recovery.
+        # ---------------------------------------------------------
+
+        save_training_checkpoint(
+            checkpoint_path,
+            model,
+            optimizer,
+            epoch=epoch,
+            train_loss=train_loss,
+            val_loss=val_loss,
+            best_val_loss=best_val_loss,
+            best_epoch=best_epoch,
+            epochs_without_improvement=(
+                epochs_without_improvement
+            ),
+            point_count=(
+                actual_point_count
+            ),
+            batch_size=(
+                args.batch_size
+            ),
+        )
+
+        print(
+            f"Resume checkpoint saved: "
+            f"{checkpoint_path}"
+        )
 
         # ---------------------------------------------------------
         # Early stopping
@@ -1835,6 +2215,11 @@ def train(
         f"{scaler_path}"
     )
 
+    print(
+        f"Last checkpoint  : "
+        f"{checkpoint_path}"
+    )
+
     print("=" * 78)
 
 
@@ -1940,8 +2325,31 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--checkpoint-path",
+        type=Path,
+        default=DEFAULT_CHECKPOINT_PATH,
+        help=(
+            "Latest training-state checkpoint. "
+            "Saved after every completed epoch."
+        ),
+    )
+
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "Resume model/optimizer/early-stopping state from "
+            "--checkpoint-path. The existing scaler is loaded."
+        ),
+    )
+
+    parser.add_argument(
         "--overwrite",
         action="store_true",
+        help=(
+            "Start a fresh run and allow existing output files "
+            "to be replaced."
+        ),
     )
 
     # -----------------------------------------------------------------
@@ -2001,6 +2409,11 @@ def parse_args():
 def validate_args(
     args,
 ) -> None:
+
+    if args.resume and args.overwrite:
+        raise ValueError(
+            "--resume and --overwrite cannot be used together."
+        )
 
     if args.batch_size <= 0:
         raise ValueError(
