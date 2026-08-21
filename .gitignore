@@ -36,3 +36,9 @@ outputs/
 
 # Generated model checkpoints
 05_model_training/weights/**/*.pt
+
+# Keep final trained model artifacts
+!05_model_training/weights/dgcnn/*.pt
+!05_model_training/weights/dgcnn/scalers.npz
+!05_model_training/weights/mlp/*.pt
+!05_model_training/weights/mlp/scalers.npz

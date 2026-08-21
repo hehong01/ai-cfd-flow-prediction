@@ -1,0 +1,93 @@
+==============================================================================
+POINT-WISE MLP TEST EVALUATION
+==============================================================================
+Data root      : /content/ai-cfd-data
+CSV directory  : /content/ai-cfd-data/05_cfd_csv
+Model          : /content/drive/MyDrive/ai-cfd-flow-prediction/mlp/best_model.pt
+Scaler         : /content/drive/MyDrive/ai-cfd-flow-prediction/mlp/scalers.npz
+Device         : cuda
+GPU            : Tesla T4
+PyTorch        : 2.11.0+cu128
+Batch size     : 8192
+==============================================================================
+
+[LOAD SCALER]
+========================================================================
+CFD SCALER STATISTICS
+========================================================================
+
+[INPUT]
+x            mean = -0.0009643902173   std =  0.03485832641
+y            mean =  0.003779579762   std =  0.05201426341
+z            mean = -0.02745688454   std =  0.04530750024
+velocity     mean =  7.666666667   std =  2.054804668
+
+[TARGET]
+HTC          mean =  54.05260697   std =  27.55769977
+wall_shear   mean =  0.3092728322   std =  0.310184546
+========================================================================
+
+[LOAD MODEL]
+PointwiseMLP(
+  (network): Sequential(
+    (0): Linear(in_features=4, out_features=256, bias=True)
+    (1): ReLU()
+    (2): Linear(in_features=256, out_features=256, bias=True)
+    (3): ReLU()
+    (4): Linear(in_features=256, out_features=256, bias=True)
+    (5): ReLU()
+    (6): Linear(in_features=256, out_features=256, bias=True)
+    (7): ReLU()
+    (8): Linear(in_features=256, out_features=2, bias=True)
+  )
+)
+Trainable parameters : 199,170
+Saved best epoch     : 6
+Saved val loss       : 0.17470113
+
+==============================================================================
+LOAD HELD-OUT TEST SET
+==============================================================================
+
+[LOAD TEST]
+CSV files : 30
+    1/30  face_0091_05mps.csv      rows= 7742  total=7,742
+   25/30  face_0099_05mps.csv      rows= 7608  total=205,875
+   30/30  face_0100_10mps.csv      rows= 7735  total=244,296
+TEST loaded:
+  X shape : (244296, 4)
+  Y shape : (244296, 2)
+  runtime : 0.6 s
+
+Test points : 244,296
+
+[NORMALIZE TEST DATA]
+Test normalization complete.
+
+==============================================================================
+TEST INFERENCE
+==============================================================================
+Inference complete : 244,296 points
+Inference runtime  : 2.97 s
+
+==============================================================================
+HELD-OUT TEST RESULTS
+==============================================================================
+========================================================================
+MODEL EVALUATION METRICS
+========================================================================
+Target                       MAE            RMSE             R^2
+------------------------------------------------------------------------
+HTC                     7.984080       12.006493        0.814444
+wall_shear              0.068493        0.129388        0.839066
+========================================================================
+
+==============================================================================
+MLP TEST EVALUATION COMPLETE
+==============================================================================
+Test faces       : face_0091 ~ face_0100
+Test CSV files   : 30
+Test points      : 244,296
+Checkpoint epoch : 6
+Validation loss  : 0.17470113
+==============================================================================
