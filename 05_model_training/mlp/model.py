@@ -14,8 +14,9 @@ The MLP treats every surface point independently.
 Therefore, unlike DGCNN, this model does not explicitly use
 neighboring-point or point-cloud geometry information.
 
-This model is intended as a simple baseline for comparison
-with the geometry-aware DGCNN model.
+The default hidden-layer width/depth is chosen so the MLP parameter
+count is close to the DGCNN parameter count, making the baseline
+comparison less sensitive to model-capacity differences.
 """
 
 from __future__ import annotations
@@ -36,11 +37,13 @@ class PointwiseMLP(nn.Module):
 
         4
         ↓
-        128
+        256
         ↓
-        128
+        256
         ↓
-        64
+        256
+        ↓
+        256
         ↓
         2
 
@@ -71,9 +74,10 @@ class PointwiseMLP(nn.Module):
         self,
         input_dim: int = 4,
         hidden_dims: tuple[int, ...] = (
-            128,
-            128,
-            64,
+            256,
+            256,
+            256,
+            256,
         ),
         output_dim: int = 2,
     ):
@@ -215,10 +219,21 @@ def main():
     print(model)
 
     print()
+    parameter_count = count_parameters(model)
+
     print(
         f"Trainable parameters : "
-        f"{count_parameters(model):,}"
+        f"{parameter_count:,}"
     )
+
+    expected_parameters = 199_170
+
+    if parameter_count != expected_parameters:
+        raise RuntimeError(
+            "Unexpected parameter count: "
+            f"expected {expected_parameters:,}, "
+            f"found {parameter_count:,}."
+        )
 
     # -------------------------------------------------------------
     # Test 1:
@@ -253,9 +268,6 @@ def main():
     # -------------------------------------------------------------
     # Test 2:
     # grouped point-cloud-shaped input
-    #
-    # Linear layers operate on the last dimension,
-    # so the same model can also process this shape.
     # -------------------------------------------------------------
 
     x_grouped = torch.randn(
@@ -308,9 +320,10 @@ def main():
         )
 
     print()
-    print("Point input test   : PASS")
-    print("Grouped input test : PASS")
-    print("Finite output test : PASS")
+    print("Parameter count test: PASS")
+    print("Point input test     : PASS")
+    print("Grouped input test   : PASS")
+    print("Finite output test   : PASS")
 
     print()
     print("=" * 72)

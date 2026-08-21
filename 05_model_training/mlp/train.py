@@ -768,7 +768,7 @@ def train(args) -> None:
 
     model = PointwiseMLP(
         input_dim=4,
-        hidden_dims=(128, 128, 64),
+        hidden_dims=(256, 256, 256, 256),
         output_dim=2,
     ).to(device)
 
