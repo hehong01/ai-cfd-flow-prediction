@@ -568,7 +568,11 @@ def main():
             except OSError:
                 pass
 
-        if completed.returncode == 0 and output_path.exists():
+        if (
+            completed.returncode == 0
+            and output_path.is_file()
+            and output_path.stat().st_size > 0
+        ):
             print("  OK -> {}".format(output_path.name))
             success += 1
         else:
