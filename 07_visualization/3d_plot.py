@@ -20,6 +20,7 @@ Modes
    Plots:
        predicted HTC
        predicted wall shear
+       predicted pressure
 
 Results
 -------

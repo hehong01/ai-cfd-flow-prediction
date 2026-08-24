@@ -15,6 +15,16 @@ from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 
+
+THIS_FILE = Path(__file__).resolve()
+REPO_ROOT = THIS_FILE.parent.parent
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from project_paths import CFD_CSV_DIR
+
+
 EXPECTED_HEADER = [
     "nodenumber", "x-coordinate", "y-coordinate", "z-coordinate",
     "pressure", "temperature", "y-plus", "wall-shear",
@@ -61,13 +71,7 @@ def normalize_header(row):
 
 
 def default_csv_dir() -> Path:
-    # Expected location:
-    # <project-root>/github/04_cfd_dataset/audit_dataset.py
-    # <project-root>/ai-cfd-data/05_cfd_csv
-    script = Path(__file__).resolve()
-    if len(script.parents) >= 3:
-        return script.parents[2] / "ai-cfd-data" / "05_cfd_csv"
-    return Path.cwd() / "ai-cfd-data" / "05_cfd_csv"
+    return CFD_CSV_DIR
 
 
 def fmt(x):

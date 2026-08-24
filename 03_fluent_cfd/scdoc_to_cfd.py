@@ -8,7 +8,7 @@ CAS/DAT + CSV at 5, 8 and 10 m/s.
 
 This file is SELF-CONTAINED: the Fluent journal is embedded at the bottom of
 this script, so no .jou file is needed. The embedded journal is the recording
-of the successful manual face_0003 run, with exactly two changes:
+of the successful manual face_0003 run, with exactly three changes:
 
   1. The 5 m/s CSV was exported twice in the recording. The first export had
      x/y/z selected as physical quantities, which duplicated the coordinate
@@ -252,7 +252,7 @@ def terminate_fluent_for_face(face):
 
 
 def wait_for_outputs(tgt, timeout, run_dir, poll=15):
-    """Wait for the 6 output files to appear and stop changing.
+    """Wait for the 9 output files to appear and stop changing.
 
     On Windows fluent.exe is a launcher: it starts the real Fluent process and
     returns straight away, so the launcher's exit code says nothing about the
@@ -496,7 +496,7 @@ def main():
         diagnose_transcript(run_dir)
         log(
             "FALLBACK",
-            "returning code %d so the master can rebuild %s with the "
+            "returning code %d so the wrapper can rebuild %s with the "
             "validated finer shrinkwrap and retry."
             % (SELF_INTERSECTION_EXIT_CODE, face),
         )
@@ -524,7 +524,7 @@ def main():
 
 # =====================================================================
 # The recorded Fluent journal, embedded verbatim (see the notes at the top
-# of this file for the two changes made to the recording).
+# of this file for the three changes made to the recording).
 # =====================================================================
 
 EMBEDDED_JOURNAL = """\

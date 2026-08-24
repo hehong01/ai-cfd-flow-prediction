@@ -160,7 +160,7 @@ def build_csv_list(csv_dir: Path, split: str) -> list[tuple[Path, float]]:
 # =====================================================================
 
 def load_one_csv(csv_path: Path, velocity: float) -> tuple[np.ndarray, np.ndarray]:
-    """Load one CFD CSV as X=[x,y,z,velocity], Y=[HTC,wall_shear]."""
+    """Load one CFD CSV as X=[x,y,z,velocity], Y=[HTC,wall_shear,pressure]."""
 
     data = np.loadtxt(
         csv_path,

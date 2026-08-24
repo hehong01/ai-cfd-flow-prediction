@@ -5,7 +5,7 @@ STL -> SCDOC SpaceClaim 2021 R1 automation.
 Run this file with normal Python:
 
     cd C:\ai-cfd-flow-prediction\github
-    python .\stl_to_scdoc_exact.py --face face_0002
+    python .\stl_to_scdoc.py --face face_0002
 
 It automatically scans:
     ai-cfd-data\02_stl\*.stl
@@ -83,7 +83,7 @@ def find_spaceclaim_exe(explicit=None):
 
 
 WORKER_TEMPLATE = r"""# -*- coding: utf-8 -*-
-# Generated automatically by stl_to_scdoc_exact.py
+# Generated automatically by stl_to_scdoc.py
 # Runs inside SpaceClaim Script API / IronPython.
 
 import os
@@ -216,7 +216,6 @@ def main():
     solids = all_solids()
     if len(solids) <= len(before_solids):
         raise Exception("Face ConvertToSolid failed.")
-
     face_solid = solids[-1]
     print("[2] Temporary face solid created")
 
