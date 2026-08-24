@@ -163,6 +163,9 @@ def main():
     # Stage 1: JPG -> STL
     # Only run if at least one source face is missing an STL.
     # image_to_stl.py itself handles the batch.
+    #
+    # Do not continue if the stage returns non-zero or if any source image
+    # still lacks its expected STL after the batch finishes.
     # ------------------------------------------------------------------
     missing_stl = [
         face for face in faces
@@ -171,16 +174,45 @@ def main():
 
     if missing_stl:
         print(f"\n[STAGE 1] JPG -> STL: {len(missing_stl)} STL(s) missing")
-        run([sys.executable, IMAGE_TO_STL], IMAGE_TO_STL.parent)
+
+        stage1_rc = run(
+            [sys.executable, IMAGE_TO_STL],
+            IMAGE_TO_STL.parent,
+        )
+
+        missing_stl_after = [
+            face for face in faces
+            if not (STL_DIR / f"{face}.stl").is_file()
+        ]
+
+        if stage1_rc != 0 or missing_stl_after:
+            print("\n[STAGE 1 FAILED] JPG -> STL did not complete cleanly")
+            print("Return code:", stage1_rc)
+
+            if missing_stl_after:
+                print("Missing STL outputs:")
+                for face in missing_stl_after:
+                    print(" -", face)
+
+            return 1
+
     else:
         print("\n[STAGE 1] SKIP: all source faces already have STL files")
+
+    # Only the current source-image set is allowed to advance. This avoids
+    # accidentally processing stale/orphan face_*.stl files left in STL_DIR.
+    stl_faces = [
+        face for face in faces
+        if (STL_DIR / f"{face}.stl").is_file()
+    ]
 
     # ------------------------------------------------------------------
     # Stage 2: STL -> SCDOC
     # Existing SCDOCs are preserved; missing ones are created with 5 mm.
+    #
+    # As in Stage 1, require both a zero return code and the presence of every
+    # expected output before advancing to Fluent.
     # ------------------------------------------------------------------
-    stl_faces = sorted(p.stem for p in STL_DIR.glob("face_*.stl"))
-
     missing_scdoc = [
         face for face in stl_faces
         if not (SCDOC_DIR / f"{face}.scdoc").is_file()
@@ -193,7 +225,7 @@ def main():
         )
 
         # No --overwrite: existing SCDOCs are skipped by the stage script.
-        run(
+        stage2_rc = run(
             [
                 sys.executable,
                 STL_TO_SCDOC,
@@ -202,14 +234,36 @@ def main():
             ],
             STL_TO_SCDOC.parent,
         )
+
+        missing_scdoc_after = [
+            face for face in stl_faces
+            if not (SCDOC_DIR / f"{face}.scdoc").is_file()
+        ]
+
+        if stage2_rc != 0 or missing_scdoc_after:
+            print("\n[STAGE 2 FAILED] STL -> SCDOC did not complete cleanly")
+            print("Return code:", stage2_rc)
+
+            if missing_scdoc_after:
+                print("Missing SCDOC outputs:")
+                for face in missing_scdoc_after:
+                    print(" -", face)
+
+            return 1
+
     else:
         print("\n[STAGE 2] SKIP: all STL faces already have SCDOC files")
+
+    # Use exactly the validated current source set in Stage 3 instead of
+    # scanning every historical face_*.scdoc that may exist in SCDOC_DIR.
+    scdocs = [
+        SCDOC_DIR / f"{face}.scdoc"
+        for face in stl_faces
+    ]
 
     # ------------------------------------------------------------------
     # Stage 3: SCDOC -> CFD
     # ------------------------------------------------------------------
-    scdocs = sorted(SCDOC_DIR.glob("face_*.scdoc"))
-
     print(f"\n[STAGE 3] SCDOC -> CFD: {len(scdocs)} case(s) found")
 
     success = []
@@ -235,6 +289,15 @@ def main():
         if rc == 0 and complete_cfd(face):
             print(f"[OK] {face}")
             success.append(face)
+            continue
+
+        # A zero return code without all expected outputs is still a failed case.
+        if rc == 0:
+            print(
+                f"[FAILED] {face}: Fluent returned 0 but one or more "
+                "expected CFD outputs are missing or empty"
+            )
+            failures.append(face)
             continue
 
         # Validated geometry fallback.
