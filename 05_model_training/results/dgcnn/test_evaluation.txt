@@ -16,9 +16,10 @@ Point limit     : None (full FPS point cloud)
 CHECKPOINT
 ==============================================================================
 Model name      : DGCNNRegressor
-Best epoch      : 96
-Validation loss : 0.05088102
+Best epoch      : 98
+Validation loss : 0.04454750
 Input dim       : 4
+Output dim      : 3
 k               : 20
 First kNN graph : raw_xyz
 Train kNN chunk : 1024
@@ -41,6 +42,7 @@ velocity     mean =  7.666666667   std =  2.054804668
 [TARGET]
 HTC          mean =  53.62839945   std =  26.72378166
 wall_shear   mean =  0.3164377345   std =  0.3115519876
+pressure     mean = -4.459082649   std =  28.83608957
 ========================================================================
 
 ==============================================================================
@@ -49,7 +51,7 @@ TEST DATASET
 Test samples   : 30
 FPS points     : 7000
 Sample X shape : (7000, 4)
-Sample Y shape : (7000, 2)
+Sample Y shape : (7000, 3)
 
 ==============================================================================
 MODEL
@@ -72,19 +74,19 @@ DGCNNRegressor(
     (1): ReLU()
     (2): Linear(in_features=256, out_features=128, bias=True)
     (3): ReLU()
-    (4): Linear(in_features=128, out_features=2, bias=True)
+    (4): Linear(in_features=128, out_features=3, bias=True)
   )
 )
 
-Trainable parameters : 189,826
+Trainable parameters : 189,955
 Evaluation points    : 7,000
 
 ==============================================================================
 TEST INFERENCE
 ==============================================================================
 Evaluated points : 210,000
-Inference runtime: 2.26 s
-Normalized MSE   : 0.06108615
+Inference runtime: 2.08 s
+Normalized MSE   : 0.05703485
 GPU peak memory  : 2.24 GB
 
 ==============================================================================
@@ -95,18 +97,19 @@ MODEL EVALUATION METRICS
 ========================================================================
 Target                       MAE            RMSE             R^2
 ------------------------------------------------------------------------
-HTC                     5.177561        7.392631        0.925621
-wall_shear              0.040289        0.066564        0.957276
+HTC                     5.489491        7.681516        0.919694
+wall_shear              0.040926        0.068306        0.955010
+pressure                3.417522        5.796989        0.961108
 ========================================================================
 
 ==============================================================================
 DGCNN TEST EVALUATION COMPLETE
 ==============================================================================
-Checkpoint epoch : 96
-Checkpoint val   : 0.05088102
+Checkpoint epoch : 98
+Checkpoint val   : 0.04454750
 Test samples     : 30
 Test batch limit : None (full test set)
 Points/sample    : 7,000
 Evaluated points : 210,000
-Inference runtime: 2.26 s
+Inference runtime: 2.08 s
 ==============================================================================

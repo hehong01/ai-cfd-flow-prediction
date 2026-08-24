@@ -21,7 +21,7 @@ Output
 ai-cfd-data/07_predictions/mlp/prediction_csv/<name>_vel<speed>.csv
 
 Columns:
-    x,y,z,velocity,predicted_htc,predicted_wall_shear
+    x,y,z,velocity,predicted_htc,predicted_wall_shear,predicted_pressure
 
 Examples
 --------
@@ -105,7 +105,7 @@ INPUT_HEADER = "x,y,z"
 
 OUTPUT_HEADER = (
     "x,y,z,velocity,"
-    "predicted_htc,predicted_wall_shear"
+    "predicted_htc,predicted_wall_shear,predicted_pressure"
 )
 
 
@@ -316,6 +316,14 @@ def load_model(
             f"{checkpoint['model_name']}"
         )
 
+    if int(checkpoint["output_dim"]) != 3:
+        raise ValueError(
+            "Legacy or incompatible MLP checkpoint: "
+            f"expected output_dim=3 "
+            f"[HTC, wall_shear, pressure], "
+            f"found output_dim={checkpoint['output_dim']}."
+        )
+
     model = PointwiseMLP(
         input_dim=int(
             checkpoint["input_dim"]
@@ -408,7 +416,7 @@ def run_inference(
                 x_batch
             )
 
-            if y_batch.ndim != 2 or y_batch.shape[1] != 2:
+            if y_batch.ndim != 2 or y_batch.shape[1] != 3:
                 raise RuntimeError(
                     "Unexpected model output shape: "
                     f"{tuple(y_batch.shape)}"
@@ -428,7 +436,7 @@ def run_inference(
 
     if y_normalized.shape != (
         len(x_normalized),
-        2,
+        3,
     ):
         raise RuntimeError(
             "Unexpected concatenated prediction shape: "
@@ -455,9 +463,9 @@ def save_prediction_csv(
 ) -> None:
     """
     Save:
-        x,y,z,velocity,predicted_htc,predicted_wall_shear
+        x,y,z,velocity,predicted_htc,predicted_wall_shear,predicted_pressure
     """
-    if predictions.shape != (len(xyz), 2):
+    if predictions.shape != (len(xyz), 3):
         raise ValueError(
             f"Invalid prediction shape: {predictions.shape}"
         )
@@ -477,7 +485,7 @@ def save_prediction_csv(
         axis=1,
     )
 
-    if output.shape != (len(xyz), 6):
+    if output.shape != (len(xyz), 7):
         raise RuntimeError(
             f"Unexpected output shape: {output.shape}"
         )
@@ -522,8 +530,16 @@ def save_prediction_csv(
 def print_prediction_summary(
     predictions: np.ndarray,
 ) -> None:
+    if predictions.ndim != 2 or predictions.shape[1] != 3:
+        raise ValueError(
+            "Expected prediction shape (N, 3) for "
+            "[HTC, wall_shear, pressure], "
+            f"found {predictions.shape}."
+        )
+
     htc = predictions[:, 0]
     wall_shear = predictions[:, 1]
+    pressure = predictions[:, 2]
 
     print(
         "  HTC [W/(m^2 K)] : "
@@ -537,6 +553,13 @@ def print_prediction_summary(
         f"min={wall_shear.min():.6f}, "
         f"mean={wall_shear.mean():.6f}, "
         f"max={wall_shear.max():.6f}"
+    )
+
+    print(
+        "  pressure [Pa]   : "
+        f"min={pressure.min():.6f}, "
+        f"mean={pressure.mean():.6f}, "
+        f"max={pressure.max():.6f}"
     )
 
 
@@ -627,12 +650,12 @@ def predict_one_csv(
     )
 
     # Restore physical units:
-    # [HTC, wall_shear]
+    # [HTC, wall_shear, pressure]
     predictions = scaler.inverse_target(
         y_normalized
     )
 
-    if predictions.shape != (len(xyz), 2):
+    if predictions.shape != (len(xyz), 3):
         raise RuntimeError(
             f"Unexpected physical prediction shape: {predictions.shape}"
         )
@@ -664,7 +687,7 @@ def predict_one_csv(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Predict HTC and wall shear from preprocessed XYZ points "
+            "Predict HTC, wall shear, and pressure from preprocessed XYZ points "
             "using the trained point-wise MLP."
         )
     )
@@ -830,6 +853,34 @@ def main() -> int:
         scaler_path
     )
 
+    target_mean = np.asarray(
+        scaler.target_mean
+    )
+
+    target_std = np.asarray(
+        scaler.target_std
+    )
+
+    if (
+        target_mean.shape != (3,)
+        or target_std.shape != (3,)
+    ):
+        raise ValueError(
+            "Legacy or incompatible MLP scaler: "
+            f"target_mean shape={target_mean.shape}, "
+            f"target_std shape={target_std.shape}. "
+            "Expected (3,) for "
+            "[HTC, wall_shear, pressure]."
+        )
+
+    if (
+        not np.all(np.isfinite(target_mean))
+        or not np.all(np.isfinite(target_std))
+    ):
+        raise ValueError(
+            "MLP target scaler contains NaN or Inf."
+        )
+
     print("[LOAD MODEL]")
     model, checkpoint = load_model(
         model_path,
@@ -841,6 +892,10 @@ def main() -> int:
         f"{checkpoint['input_dim']} -> "
         f"{' -> '.join(str(v) for v in checkpoint['hidden_dims'])} -> "
         f"{checkpoint['output_dim']}"
+    )
+    print(
+        "Targets          : "
+        "[HTC, wall_shear, pressure]"
     )
     print(
         f"Parameters       : {count_parameters(model):,}"

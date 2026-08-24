@@ -1,7 +1,12 @@
-# Direct Python dependencies used by the currently implemented pipeline.
+# Direct Python dependencies used by the reconstructed AI-CFD pipeline.
 # ANSYS SpaceClaim / Fluent are external applications and are not installed by pip.
 
 numpy
+pandas
+scipy
+torch
 opencv-python
 mediapipe
 trimesh
+plotly
+streamlit

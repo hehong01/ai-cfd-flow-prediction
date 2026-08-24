@@ -276,6 +276,7 @@ def load_prediction_csv(
         "velocity",
         "predicted_htc",
         "predicted_wall_shear",
+        "predicted_pressure",
     )
 
     missing = [
@@ -469,6 +470,10 @@ def print_prediction_summary(
         "predicted_wall_shear"
     ].to_numpy(dtype=np.float64)
 
+    pressure = df[
+        "predicted_pressure"
+    ].to_numpy(dtype=np.float64)
+
     print()
     print("=" * 78)
     print("AI PREDICTION 3D VISUALIZATION")
@@ -511,6 +516,12 @@ def print_prediction_summary(
         f"min={shear.min():.6f}, "
         f"mean={shear.mean():.6f}, "
         f"max={shear.max():.6f} Pa"
+    )
+    print(
+        "Pressure   : "
+        f"min={pressure.min():.6f}, "
+        f"mean={pressure.mean():.6f}, "
+        f"max={pressure.max():.6f} Pa"
     )
     print("=" * 78)
 
@@ -802,12 +813,20 @@ def build_prediction_plots(
         "predicted_wall_shear"
     ].to_numpy(dtype=np.float64)
 
+    pressure = display_df[
+        "predicted_pressure"
+    ].to_numpy(dtype=np.float64)
+
     full_htc = full_df[
         "predicted_htc"
     ].to_numpy(dtype=np.float64)
 
     full_shear = full_df[
         "predicted_wall_shear"
+    ].to_numpy(dtype=np.float64)
+
+    full_pressure = full_df[
+        "predicted_pressure"
     ].to_numpy(dtype=np.float64)
 
     model_label = model.upper()
@@ -840,6 +859,20 @@ def build_prediction_plots(
                 velocity=velocity,
             ),
             "02_predicted_wall_shear_3d.html",
+        ),
+        (
+            make_field_plot(
+                x=x,
+                y=y,
+                z=z,
+                values=pressure,
+                full_values=full_pressure,
+                title=f"{model_label} — Predicted Pressure",
+                value_label="Predicted pressure",
+                unit="Pa",
+                velocity=velocity,
+            ),
+            "03_predicted_pressure_3d.html",
         ),
     )
 

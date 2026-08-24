@@ -16,14 +16,14 @@ A single inlet velocity is appended to every point:
 Inference follows the validated training/evaluation pipeline:
     raw physical XYZ -> first k-NN graph
     normalized [x,y,z,velocity] -> DGCNN edge values/features
-    best_model.pt -> normalized [HTC, wall_shear]
-    saved TRAIN scaler -> physical [HTC, wall_shear]
+    best_model.pt -> normalized [HTC, wall_shear, pressure]
+    saved TRAIN scaler -> physical [HTC, wall_shear, pressure]
 
 Output:
     ai-cfd-data/07_predictions/dgcnn/prediction_csv/<name>_vel<speed>.csv
 
 Columns:
-    x,y,z,velocity,predicted_htc,predicted_wall_shear
+    x,y,z,velocity,predicted_htc,predicted_wall_shear,predicted_pressure
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ DEFAULT_SCALER_PATH = WEIGHT_DIR / "scalers.npz"
 INPUT_HEADER = "x,y,z"
 OUTPUT_HEADER = (
     "x,y,z,velocity,"
-    "predicted_htc,predicted_wall_shear"
+    "predicted_htc,predicted_wall_shear,predicted_pressure"
 )
 
 
@@ -218,8 +218,10 @@ def load_checkpoint_and_model(
     )
 
     required = {
+        "model_name",
         "model_state_dict",
         "input_dim",
+        "output_dim",
         "k",
         "epoch",
         "val_loss",
@@ -232,6 +234,24 @@ def load_checkpoint_and_model(
         raise ValueError(
             "DGCNN checkpoint is missing fields: "
             f"{sorted(missing)}"
+        )
+
+    if checkpoint["model_name"] != "DGCNNRegressor":
+        raise ValueError(
+            "Unexpected model type in checkpoint: "
+            f"{checkpoint['model_name']}"
+        )
+
+    output_dim = int(
+        checkpoint["output_dim"]
+    )
+
+    if output_dim != 3:
+        raise ValueError(
+            "Legacy or incompatible DGCNN checkpoint: "
+            f"expected output_dim=3 "
+            f"[HTC, wall_shear, pressure], "
+            f"found output_dim={output_dim}."
         )
 
     first_knn_space = str(
@@ -276,6 +296,14 @@ def load_checkpoint_and_model(
         k=k,
         knn_chunk_size=inference_chunk_size,
     ).to(device)
+
+    if int(model.output_dim) != 3:
+        raise RuntimeError(
+            "Reconstructed DGCNN model has unexpected "
+            f"output_dim={model.output_dim}. "
+            "Expected 3 targets: "
+            "[HTC, wall_shear, pressure]."
+        )
 
     model.load_state_dict(
         checkpoint["model_state_dict"]
@@ -359,7 +387,7 @@ def run_inference(
     expected_shape = (
         1,
         len(x_normalized),
-        2,
+        3,
     )
 
     if tuple(y_tensor.shape) != expected_shape:
@@ -390,7 +418,7 @@ def save_prediction_csv(
     velocity: float,
     predictions: np.ndarray,
 ) -> None:
-    if predictions.shape != (len(xyz), 2):
+    if predictions.shape != (len(xyz), 3):
         raise ValueError(
             f"Invalid prediction shape: {predictions.shape}"
         )
@@ -410,7 +438,7 @@ def save_prediction_csv(
         axis=1,
     )
 
-    if output.shape != (len(xyz), 6):
+    if output.shape != (len(xyz), 7):
         raise RuntimeError(
             f"Unexpected output shape: {output.shape}"
         )
@@ -455,8 +483,16 @@ def save_prediction_csv(
 def print_prediction_summary(
     predictions: np.ndarray,
 ) -> None:
+    if predictions.ndim != 2 or predictions.shape[1] != 3:
+        raise ValueError(
+            "Expected prediction shape (N, 3) for "
+            "[HTC, wall_shear, pressure], "
+            f"found {predictions.shape}."
+        )
+
     htc = predictions[:, 0]
     wall_shear = predictions[:, 1]
+    pressure = predictions[:, 2]
 
     print(
         "  HTC [W/(m^2 K)] : "
@@ -470,6 +506,13 @@ def print_prediction_summary(
         f"min={wall_shear.min():.6f}, "
         f"mean={wall_shear.mean():.6f}, "
         f"max={wall_shear.max():.6f}"
+    )
+
+    print(
+        "  pressure [Pa]   : "
+        f"min={pressure.min():.6f}, "
+        f"mean={pressure.mean():.6f}, "
+        f"max={pressure.max():.6f}"
     )
 
 
@@ -598,7 +641,7 @@ def predict_one_csv(
         y_normalized
     )
 
-    if predictions.shape != (len(xyz), 2):
+    if predictions.shape != (len(xyz), 3):
         raise RuntimeError(
             f"Unexpected physical prediction shape: {predictions.shape}"
         )
@@ -626,7 +669,7 @@ def predict_one_csv(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Predict HTC and wall shear from a 7000-point FPS cloud "
+            "Predict HTC, wall shear, and pressure from a 7000-point FPS cloud "
             "using the trained DGCNN."
         )
     )
@@ -786,6 +829,56 @@ def main() -> int:
         scaler_path
     )
 
+    input_mean = np.asarray(
+        scaler.input_mean
+    )
+
+    input_std = np.asarray(
+        scaler.input_std
+    )
+
+    target_mean = np.asarray(
+        scaler.target_mean
+    )
+
+    target_std = np.asarray(
+        scaler.target_std
+    )
+
+    if (
+        input_mean.shape != (4,)
+        or input_std.shape != (4,)
+    ):
+        raise ValueError(
+            "Incompatible DGCNN input scaler: "
+            f"input_mean shape={input_mean.shape}, "
+            f"input_std shape={input_std.shape}. "
+            "Expected (4,) for "
+            "[x, y, z, velocity]."
+        )
+
+    if (
+        target_mean.shape != (3,)
+        or target_std.shape != (3,)
+    ):
+        raise ValueError(
+            "Legacy or incompatible DGCNN target scaler: "
+            f"target_mean shape={target_mean.shape}, "
+            f"target_std shape={target_std.shape}. "
+            "Expected (3,) for "
+            "[HTC, wall_shear, pressure]."
+        )
+
+    if (
+        not np.all(np.isfinite(input_mean))
+        or not np.all(np.isfinite(input_std))
+        or not np.all(np.isfinite(target_mean))
+        or not np.all(np.isfinite(target_std))
+    ):
+        raise ValueError(
+            "DGCNN scaler contains NaN or Inf."
+        )
+
     print("[LOAD MODEL]")
     (
         model,
@@ -805,6 +898,13 @@ def main() -> int:
     print(
         f"Model name      : "
         f"{checkpoint.get('model_name', 'unknown')}"
+    )
+    print(
+        f"Output dim      : {int(checkpoint['output_dim'])}"
+    )
+    print(
+        "Targets         : "
+        "[HTC, wall_shear, pressure]"
     )
     print(
         f"Parameters      : {count_parameters(model):,}"

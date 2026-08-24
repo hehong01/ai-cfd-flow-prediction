@@ -25,6 +25,7 @@ velocity     mean =  7.666666667   std =  2.054804668
 [TARGET]
 HTC          mean =  54.05260697   std =  27.55769977
 wall_shear   mean =  0.3092728322   std =  0.310184546
+pressure     mean = -2.920733803   std =  29.38944945
 ========================================================================
 
 [LOAD MODEL]
@@ -38,12 +39,12 @@ PointwiseMLP(
     (5): ReLU()
     (6): Linear(in_features=256, out_features=256, bias=True)
     (7): ReLU()
-    (8): Linear(in_features=256, out_features=2, bias=True)
+    (8): Linear(in_features=256, out_features=3, bias=True)
   )
 )
-Trainable parameters : 199,170
-Saved best epoch     : 6
-Saved val loss       : 0.17470113
+Trainable parameters : 199,427
+Saved best epoch     : 33
+Saved val loss       : 0.12895100
 
 ==============================================================================
 LOAD HELD-OUT TEST SET
@@ -56,8 +57,8 @@ CSV files : 30
    30/30  face_0100_10mps.csv      rows= 7735  total=244,296
 TEST loaded:
   X shape : (244296, 4)
-  Y shape : (244296, 2)
-  runtime : 0.6 s
+  Y shape : (244296, 3)
+  runtime : 0.3 s
 
 Test points : 244,296
 
@@ -68,7 +69,7 @@ Test normalization complete.
 TEST INFERENCE
 ==============================================================================
 Inference complete : 244,296 points
-Inference runtime  : 2.97 s
+Inference runtime  : 1.58 s
 
 ==============================================================================
 HELD-OUT TEST RESULTS
@@ -78,8 +79,9 @@ MODEL EVALUATION METRICS
 ========================================================================
 Target                       MAE            RMSE             R^2
 ------------------------------------------------------------------------
-HTC                     7.984080       12.006493        0.814444
-wall_shear              0.068493        0.129388        0.839066
+HTC                     7.847612       12.157173        0.809757
+wall_shear              0.065297        0.127328        0.844150
+pressure                3.928130        7.107886        0.944223
 ========================================================================
 
 ==============================================================================
@@ -88,6 +90,6 @@ MLP TEST EVALUATION COMPLETE
 Test faces       : face_0091 ~ face_0100
 Test CSV files   : 30
 Test points      : 244,296
-Checkpoint epoch : 6
-Validation loss  : 0.17470113
+Checkpoint epoch : 33
+Validation loss  : 0.12895100
 ==============================================================================

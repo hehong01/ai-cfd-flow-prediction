@@ -6,7 +6,7 @@ reconstructed STL surface using inverse-distance-weighted (IDW)
 interpolation, then renders the result as a smooth Plotly Mesh3d surface.
 
 Input prediction CSV:
-    x,y,z,velocity,predicted_htc,predicted_wall_shear
+    x,y,z,velocity,predicted_htc,predicted_wall_shear,predicted_pressure
 
 Expected STL:
     ai-cfd-data/07_predictions/stl/<geometry>.stl
@@ -223,6 +223,7 @@ def load_prediction_csv(
         "velocity",
         "predicted_htc",
         "predicted_wall_shear",
+        "predicted_pressure",
     )
 
     missing = [
@@ -820,6 +821,12 @@ def main() -> int:
         dtype=np.float64
     )
 
+    source_pressure = df[
+        "predicted_pressure"
+    ].to_numpy(
+        dtype=np.float64
+    )
+
     velocity = float(
         df[
             "velocity"
@@ -870,14 +877,44 @@ def main() -> int:
         f"{time.perf_counter() - start:.3f} s"
     )
 
-    # Same source and target coordinates are used for both fields,
+    print()
+    print("[INTERPOLATING PRESSURE]")
+
+    start = time.perf_counter()
+
+    interpolated_pressure, nearest_distance_pressure = (
+        interpolate_idw(
+            source_xyz=source_xyz,
+            source_values=source_pressure,
+            target_xyz=vertices,
+            neighbors=args.neighbors,
+            power=args.power,
+        )
+    )
+
+    print(
+        f"Completed in "
+        f"{time.perf_counter() - start:.3f} s"
+    )
+
+    # Same source and target coordinates are used for all three fields,
     # so nearest-neighbor distances should be identical.
     if not np.allclose(
         nearest_distance,
         nearest_distance_shear,
     ):
         raise RuntimeError(
-            "Unexpected nearest-distance mismatch between fields."
+            "Unexpected nearest-distance mismatch "
+            "between HTC and wall shear."
+        )
+
+    if not np.allclose(
+        nearest_distance,
+        nearest_distance_pressure,
+    ):
+        raise RuntimeError(
+            "Unexpected nearest-distance mismatch "
+            "between HTC and pressure."
         )
 
     print_summary(
@@ -918,6 +955,18 @@ def main() -> int:
         velocity=velocity,
     )
 
+    pressure_fig = make_mesh_plot(
+        vertices=vertices,
+        faces=faces,
+        values=interpolated_pressure,
+        title=(
+            f"{model_label} — Interpolated Predicted Pressure"
+        ),
+        value_label="Predicted pressure",
+        unit="Pa",
+        velocity=velocity,
+    )
+
     print()
     print("[GENERATING INTERPOLATED SURFACE PLOTS]")
 
@@ -935,6 +984,15 @@ def main() -> int:
         output_path=(
             output_dir
             / "02_interpolated_wall_shear.html"
+        ),
+        show=not args.no_show,
+    )
+
+    save_and_show(
+        fig=pressure_fig,
+        output_path=(
+            output_dir
+            / "03_interpolated_pressure.html"
         ),
         show=not args.no_show,
     )

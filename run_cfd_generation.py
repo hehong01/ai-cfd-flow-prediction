@@ -2,15 +2,19 @@
 # -*- coding: utf-8 -*-
 
 """
-master_run.py
+run_cfd_generation.py
 
-Simple end-to-end wrapper for the AI-CFD pipeline.
+Batch wrapper for AI-CFD geometry and CFD-data generation.
 
 Stages
 ------
 1) image_to_stl.py
 2) stl_to_scdoc.py          (default shrinkwrap: 5 mm)
 3) scdoc_to_cfd.py          (5, 8, 10 m/s)
+
+This wrapper generates the geometry and Fluent CFD cases used by the
+later dataset-preparation and model-training stages. It does not run
+dataset preprocessing, model training, AI inference, or visualization.
 
 Validated geometry fallback
 ---------------------------
@@ -27,7 +31,7 @@ The three stage scripts remain separate; this file only orchestrates them.
 
 IMPORTANT
 ---------
-Run this master with the Python environment used by image_to_stl.py
+Run this wrapper with the Python environment used by image_to_stl.py
 (e.g. `conda activate ai-cfd` first).
 """
 
@@ -148,7 +152,7 @@ def main():
         return 1
 
     print("=" * 80)
-    print("AI-CFD MASTER PIPELINE")
+    print("AI-CFD CFD GENERATION PIPELINE")
     print("Python             :", sys.executable)
     print("Source faces       :", len(faces))
     print("Primary shrinkwrap :", PRIMARY_SHRINKWRAP_MM, "mm")
