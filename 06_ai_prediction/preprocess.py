@@ -158,8 +158,6 @@ def image_to_stl_environment_ok(python_exe: Path) -> bool:
 
     result = subprocess.run(
         [str(python_exe), "-c", check_code],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
         check=False,
     )
 
