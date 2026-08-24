@@ -2,6 +2,16 @@
 
 This directory contains the visualization and interactive analysis stage of the AI-CFD pipeline.
 
+<p align="center">
+  <a href="https://ai-cfd-flow-prediction-jtwnysikctniercmhrpfxj.streamlit.app/">
+    <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open in Streamlit">
+  </a>
+</p>
+
+<p align="center">
+  Run the hosted AI-CFD prediction and 3D hotspot-analysis app directly in your browser.
+</p>
+
 It uses CFD or AI-prediction outputs to visualize:
 
 ```text
@@ -170,6 +180,12 @@ The script also reports the nearest-point distance between prediction points and
 
 # 4. Interactive Streamlit App
 
+## Open the hosted app
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ai-cfd-flow-prediction-jtwnysikctniercmhrpfxj.streamlit.app/)
+
+The hosted app requires no local setup. Upload a face image, choose MLP or DGCNN, select the inlet velocity, and click **Run Prediction**.
+
 `streamlit_app.py` provides an interactive interface for the complete new-image prediction workflow.
 
 The user only needs to:
@@ -195,7 +211,7 @@ image
 → 3D visualization
 ```
 
-### Run
+### Run locally
 
 ```powershell
 python -m streamlit run streamlit_app.py

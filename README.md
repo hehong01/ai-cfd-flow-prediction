@@ -2,6 +2,16 @@
 
 End-to-end reconstruction and extension of an undergraduate AI-CFD project for predicting facial external-flow wall fields from 3D surface geometry and inlet velocity.
 
+<p align="center">
+  <a href="https://ai-cfd-flow-prediction-jtwnysikctniercmhrpfxj.streamlit.app/">
+    <img src="https://static.streamlit.io/badges/streamlit_badge_black_white.svg" alt="Open in Streamlit">
+  </a>
+</p>
+
+<p align="center">
+  <strong>Live App:</strong> Upload a face image, choose MLP or DGCNN and an inlet velocity, then run AI prediction and 3D visualization directly in your browser.
+</p>
+
 The current repository connects the full workflow:
 
 ```text
@@ -486,6 +496,12 @@ Interactive Plotly examples are also included:
 
 ## 8. Interactive Streamlit App
 
+### Launch the live app
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ai-cfd-flow-prediction-jtwnysikctniercmhrpfxj.streamlit.app/)
+
+No local installation is required for the hosted app. Upload a face image, select the model and inlet velocity, and click **Run Prediction**.
+
 `07_visualization/streamlit_app.py` combines new-image inference and visualization into one interface:
 
 ```text
@@ -714,7 +730,11 @@ The executed final GPU workflows are also available in:
 
 ### E. Launch the interactive prediction app
 
-From the repository root:
+**Hosted app — one click:**
+
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://ai-cfd-flow-prediction-jtwnysikctniercmhrpfxj.streamlit.app/)
+
+**Run locally from the repository root:**
 
 ```powershell
 python -m streamlit run .\07_visualization\streamlit_app.py
