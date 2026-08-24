@@ -123,7 +123,7 @@ def collect_images(input_value: str | None) -> list[Path]:
 def candidate_python_executables() -> list[Path]:
     candidates: list[Path] = []
 
-    current = Path(sys.executable).resolve()
+    current = Path(sys.executable)
     candidates.append(current)
 
     # Base conda layout:
