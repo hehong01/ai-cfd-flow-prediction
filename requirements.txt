@@ -6,7 +6,7 @@ pandas
 scipy
 torch
 opencv-python
-mediapipe
+mediapipe==0.10.21
 trimesh
 plotly
 streamlit
