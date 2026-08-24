@@ -5,7 +5,7 @@ Input features:
     [x, y, z, velocity]
 
 Target features:
-    [HTC, wall_shear]
+    [HTC, wall_shear, pressure]
 
 Standardization:
     normalized = (value - mean) / std
@@ -51,10 +51,11 @@ INPUT_NAMES = (
 TARGET_NAMES = (
     "HTC",
     "wall_shear",
+    "pressure",
 )
 
 NUM_INPUT_FEATURES = 4
-NUM_TARGET_FEATURES = 2
+NUM_TARGET_FEATURES = 3
 
 
 # =====================================================================
@@ -113,16 +114,16 @@ def _validate_target_array(
     Validate model target data.
 
     Expected final dimension:
-        2 -> [HTC, wall_shear]
+        3 -> [HTC, wall_shear, pressure]
 
     Any leading dimensions are allowed.
 
     Examples:
         MLP:
-            (N, 2)
+            (N, 3)
 
         DGCNN:
-            (B, 7000, 2)
+            (B, 7000, 3)
     """
 
     y = np.asarray(
@@ -139,7 +140,7 @@ def _validate_target_array(
     if y.shape[-1] != NUM_TARGET_FEATURES:
         raise ValueError(
             f"Expected {NUM_TARGET_FEATURES} target features "
-            f"[HTC, wall_shear], "
+            f"[HTC, wall_shear, pressure], "
             f"found shape {y.shape}."
         )
 
@@ -168,10 +169,10 @@ class CFDScaler:
             [std_x, std_y, std_z, std_velocity]
 
         target_mean:
-            [mean_HTC, mean_wall_shear]
+            [mean_HTC, mean_wall_shear, mean_pressure]
 
         target_std:
-            [std_HTC, std_wall_shear]
+            [std_HTC, std_wall_shear, std_pressure]
     """
 
     def __init__(
@@ -323,7 +324,7 @@ class CFDScaler:
         y_train:
             Target array whose final dimension is:
 
-                [HTC, wall_shear]
+                [HTC, wall_shear, pressure]
 
         The leading dimensions are flattened before calculating
         statistics.
@@ -332,11 +333,11 @@ class CFDScaler:
 
             MLP:
                 X -> (N, 4)
-                Y -> (N, 2)
+                Y -> (N, 3)
 
             DGCNN:
                 X -> (B, 7000, 4)
-                Y -> (B, 7000, 2)
+                Y -> (B, 7000, 3)
         """
 
         x_train = _validate_input_array(
@@ -481,6 +482,7 @@ class CFDScaler:
 
             HTC
             wall shear
+            pressure
         """
 
         self._require_fitted()
@@ -666,9 +668,9 @@ def main():
 
     y = np.array(
         [
-            [30.0, 0.10],
-            [60.0, 0.30],
-            [90.0, 0.50],
+            [30.0, 0.10, -12.0],
+            [60.0, 0.30, 0.0],
+            [90.0, 0.50, 12.0],
         ],
         dtype=np.float64,
     )

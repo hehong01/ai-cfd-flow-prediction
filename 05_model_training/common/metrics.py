@@ -2,7 +2,7 @@
 Common evaluation metrics for MLP and DGCNN CFD models.
 
 Target order:
-    [HTC, wall_shear]
+    [HTC, wall_shear, pressure]
 
 Metrics:
     MAE
@@ -16,20 +16,21 @@ Important:
 Examples:
     HTC        -> W/(m^2 K)
     wall shear -> Pa
+    pressure   -> Pa
 
 This module accepts either:
     NumPy arrays
     PyTorch tensors
 
 Expected final target dimension:
-    2 -> [HTC, wall_shear]
+    3 -> [HTC, wall_shear, pressure]
 
 Examples:
     MLP:
-        (N, 2)
+        (N, 3)
 
     DGCNN:
-        (B, 7000, 2)
+        (B, 7000, 3)
 """
 
 from __future__ import annotations
@@ -44,9 +45,10 @@ import numpy as np
 TARGET_NAMES = (
     "HTC",
     "wall_shear",
+    "pressure",
 )
 
-NUM_TARGETS = 2
+NUM_TARGETS = 3
 
 
 # =====================================================================
@@ -86,13 +88,13 @@ def _validate_targets(
     Validate prediction and target arrays.
 
     Final dimension must be:
-        2 -> [HTC, wall_shear]
+        3 -> [HTC, wall_shear, pressure]
 
     Leading dimensions may be arbitrary.
 
     Examples:
-        (N, 2)
-        (B, 7000, 2)
+        (N, 3)
+        (B, 7000, 3)
     """
 
     y_true = _to_numpy(
@@ -119,7 +121,7 @@ def _validate_targets(
     if y_true.shape[-1] != NUM_TARGETS:
         raise ValueError(
             f"Expected final dimension {NUM_TARGETS} "
-            f"[HTC, wall_shear], "
+            f"[HTC, wall_shear, pressure], "
             f"found shape {y_true.shape}."
         )
 
@@ -169,9 +171,9 @@ def mae(
 
     Returns
     -------
-    ndarray, shape (2,)
+    ndarray, shape (3,)
 
-        [HTC_MAE, wall_shear_MAE]
+        [HTC_MAE, wall_shear_MAE, pressure_MAE]
     """
 
     y_true, y_pred = (
@@ -198,9 +200,9 @@ def rmse(
 
     Returns
     -------
-    ndarray, shape (2,)
+    ndarray, shape (3,)
 
-        [HTC_RMSE, wall_shear_RMSE]
+        [HTC_RMSE, wall_shear_RMSE, pressure_RMSE]
     """
 
     y_true, y_pred = (
@@ -234,9 +236,9 @@ def r2_score(
 
     Returns
     -------
-    ndarray, shape (2,)
+    ndarray, shape (3,)
 
-        [HTC_R2, wall_shear_R2]
+        [HTC_R2, wall_shear_R2, pressure_R2]
 
     Notes
     -----
@@ -316,6 +318,11 @@ def calculate_metrics(
                 "R2": ...
             },
             "wall_shear": {
+                "MAE": ...,
+                "RMSE": ...,
+                "R2": ...
+            },
+            "pressure": {
                 "MAE": ...,
                 "RMSE": ...,
                 "R2": ...
@@ -528,20 +535,20 @@ def main():
 
     y_true = np.array(
         [
-            [30.0, 0.10],
-            [50.0, 0.20],
-            [70.0, 0.30],
-            [90.0, 0.40],
+            [30.0, 0.10, 12.0],
+            [50.0, 0.20, 18.0],
+            [70.0, 0.30, 24.0],
+            [90.0, 0.40, 30.0],
         ],
         dtype=np.float64,
     )
 
     y_pred = np.array(
         [
-            [32.0, 0.11],
-            [48.0, 0.18],
-            [74.0, 0.33],
-            [87.0, 0.39],
+            [32.0, 0.11, 13.0],
+            [48.0, 0.18, 16.0],
+            [74.0, 0.33, 27.0],
+            [87.0, 0.39, 29.0],
         ],
         dtype=np.float64,
     )
@@ -590,6 +597,21 @@ def main():
             "Wall-shear MAE self-test failed."
         )
 
+    expected_pressure_mae = (
+        1.0
+        + 2.0
+        + 3.0
+        + 1.0
+    ) / 4.0
+
+    if not np.isclose(
+        results["pressure"]["MAE"],
+        expected_pressure_mae,
+    ):
+        raise RuntimeError(
+            "Pressure MAE self-test failed."
+        )
+
     # Perfect prediction test
     perfect = calculate_metrics(
         y_true,
@@ -626,6 +648,14 @@ def main():
     ):
         raise RuntimeError(
             "Perfect wall-shear R2 test failed."
+        )
+
+    if not np.isclose(
+        perfect["pressure"]["R2"],
+        1.0,
+    ):
+        raise RuntimeError(
+            "Perfect pressure R2 test failed."
         )
 
     print()

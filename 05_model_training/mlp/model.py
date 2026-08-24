@@ -7,7 +7,7 @@ For each surface point:
         [x, y, z, velocity]
 
     Output:
-        [HTC, wall_shear]
+        [HTC, wall_shear, pressure]
 
 The MLP treats every surface point independently.
 
@@ -45,7 +45,7 @@ class PointwiseMLP(nn.Module):
         ↓
         256
         ↓
-        2
+        3
 
     Input features:
         0 -> x
@@ -56,6 +56,7 @@ class PointwiseMLP(nn.Module):
     Output targets:
         0 -> HTC
         1 -> wall shear
+        2 -> pressure
 
     The model operates on the final tensor dimension.
 
@@ -66,8 +67,8 @@ class PointwiseMLP(nn.Module):
 
     and produce:
 
-        (N, 2)
-        (B, N, 2)
+        (N, 3)
+        (B, N, 3)
     """
 
     def __init__(
@@ -79,7 +80,7 @@ class PointwiseMLP(nn.Module):
             256,
             256,
         ),
-        output_dim: int = 2,
+        output_dim: int = 3,
     ):
         super().__init__()
 
@@ -131,7 +132,7 @@ class PointwiseMLP(nn.Module):
 
         # Final regression layer.
         #
-        # No activation is applied because HTC and wall shear
+        # No activation is applied because HTC, wall shear, and pressure
         # are continuous regression targets.
         layers.append(
             nn.Linear(
@@ -166,9 +167,9 @@ class PointwiseMLP(nn.Module):
 
         Returns
         -------
-        Tensor whose final dimension is 2:
+        Tensor whose final dimension is 3:
 
-                [HTC, wall_shear]
+                [HTC, wall_shear, pressure]
         """
 
         if x.ndim < 2:
@@ -226,7 +227,7 @@ def main():
         f"{parameter_count:,}"
     )
 
-    expected_parameters = 199_170
+    expected_parameters = 199_427
 
     if parameter_count != expected_parameters:
         raise RuntimeError(
@@ -259,7 +260,7 @@ def main():
 
     if y.shape != (
         32,
-        2,
+        3,
     ):
         raise RuntimeError(
             "Point-batch output shape test failed."
@@ -295,7 +296,7 @@ def main():
     if y_grouped.shape != (
         2,
         7000,
-        2,
+        3,
     ):
         raise RuntimeError(
             "Grouped-input output shape test failed."

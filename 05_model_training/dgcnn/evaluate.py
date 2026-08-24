@@ -19,7 +19,7 @@ Input per point:
     [x, y, z, velocity]
 
 Target per point:
-    [HTC, wall_shear]
+    [HTC, wall_shear, pressure]
 
 Evaluation metrics are calculated after inverse normalization,
 therefore the reported errors are in physical units.
@@ -256,6 +256,7 @@ def evaluate(
     required_keys = (
         "model_state_dict",
         "input_dim",
+        "output_dim",
         "k",
         "epoch",
         "val_loss",
@@ -275,6 +276,20 @@ def evaluate(
             "input_dim"
         ]
     )
+
+    checkpoint_output_dim = int(
+        checkpoint[
+            "output_dim"
+        ]
+    )
+
+    if checkpoint_output_dim != 3:
+        raise RuntimeError(
+            "Legacy or incompatible DGCNN checkpoint: "
+            f"expected output_dim=3 "
+            f"[HTC, wall_shear, pressure], "
+            f"found output_dim={checkpoint_output_dim}."
+        )
 
     checkpoint_k = int(
         checkpoint[
@@ -362,6 +377,11 @@ def evaluate(
     print(
         f"Input dim       : "
         f"{checkpoint_input_dim}"
+    )
+
+    print(
+        f"Output dim      : "
+        f"{checkpoint_output_dim}"
     )
 
     print(
@@ -570,6 +590,14 @@ def evaluate(
         device
     )
 
+    if int(model.output_dim) != 3:
+        raise RuntimeError(
+            "Reconstructed DGCNN model has an unexpected "
+            f"output_dim={model.output_dim}. "
+            "Expected 3 targets: "
+            "[HTC, wall_shear, pressure]."
+        )
+
     model.load_state_dict(
         checkpoint[
             "model_state_dict"
@@ -651,11 +679,13 @@ def evaluate(
 
     if (
         y_true_norm.ndim != 2
-        or y_true_norm.shape[1] != 2
+        or y_true_norm.shape[1] != 3
     ):
         raise RuntimeError(
             "Unexpected evaluation output shape: "
-            f"{y_true_norm.shape}"
+            f"{y_true_norm.shape}. "
+            "Expected (N, 3) for "
+            "[HTC, wall_shear, pressure]."
         )
 
     if not np.isfinite(

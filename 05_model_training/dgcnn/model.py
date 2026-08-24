@@ -5,13 +5,13 @@ Input per point:
     [x, y, z, velocity]
 
 Output per point:
-    [HTC, wall_shear]
+    [HTC, wall_shear, pressure]
 
 Expected input:
     (B, N, 4)
 
 Expected output:
-    (B, N, 2)
+    (B, N, 3)
 
 Main structure:
     EdgeConv 1 : 4   -> 64
@@ -29,7 +29,7 @@ Main structure:
         256 + 256 = 512
 
     Regression head:
-        512 -> 256 -> 128 -> 2
+        512 -> 256 -> 128 -> 3
 
 Dynamic graph:
     k-NN is recomputed before every EdgeConv using the current
@@ -662,9 +662,9 @@ class DGCNNRegressor(nn.Module):
         [x, y, z, velocity]
 
     Output:
-        (B, N, 2)
+        (B, N, 3)
 
-        [HTC, wall_shear]
+        [HTC, wall_shear, pressure]
 
     Local features:
         EdgeConv1 -> 64
@@ -698,7 +698,7 @@ class DGCNNRegressor(nn.Module):
             )
 
         self.input_dim = input_dim
-        self.output_dim = 2
+        self.output_dim = 3
 
         self.k = k
 
@@ -755,7 +755,7 @@ class DGCNNRegressor(nn.Module):
         #
         # Regression:
         #
-        #     512 -> 256 -> 128 -> 2
+        #     512 -> 256 -> 128 -> 3
         # =========================================================
 
         self.regression_head = (
@@ -774,7 +774,7 @@ class DGCNNRegressor(nn.Module):
 
                 nn.Linear(
                     128,
-                    2,
+                    3,
                 ),
             )
         )
@@ -799,7 +799,7 @@ class DGCNNRegressor(nn.Module):
         -------
         prediction:
             Shape:
-                (B, N, 2)
+                (B, N, 3)
         """
 
         if x.ndim != 3:
@@ -968,13 +968,14 @@ class DGCNNRegressor(nn.Module):
         #
         # (B,N,512)
         #     ↓
-        # 512 -> 256 -> 128 -> 2
+        # 512 -> 256 -> 128 -> 3
         #     ↓
-        # (B,N,2)
+        # (B,N,3)
         #
         # Final outputs:
         #     [...,0] = HTC
         #     [...,1] = wall_shear
+        #     [...,2] = pressure
         # =========================================================
 
         prediction = (
@@ -1196,7 +1197,7 @@ def main():
     if prediction.shape != (
         batch_size,
         num_points,
-        2,
+        3,
     ):
         raise RuntimeError(
             "Full-model output shape test failed."

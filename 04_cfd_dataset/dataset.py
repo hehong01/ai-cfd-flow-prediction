@@ -7,7 +7,7 @@ Input per point:
     [x, y, z, velocity]
 
 Target per point:
-    [HTC, wall_shear]
+    [HTC, wall_shear, pressure]
 
 FPS preprocessing:
     preprocessing_dgcnn.py generates one fixed 7000-point row-index
@@ -168,11 +168,12 @@ class DGCNNCFDDataset(Dataset):
                 2 -> z
                 3 -> inlet velocity
 
-        Y : torch.float32, shape (7000, 2)
+        Y : torch.float32, shape (7000, 3)
 
             columns:
                 0 -> HTC
                 1 -> wall shear
+                2 -> pressure
 
     If return_sample_id=True:
 
@@ -323,25 +324,26 @@ class DGCNNCFDDataset(Dataset):
         # 0 -> x
         # 1 -> y
         # 2 -> z
-        # 3 -> wall shear
-        # 4 -> HTC
+        # 3 -> pressure
+        # 4 -> wall shear
+        # 5 -> HTC
         # -------------------------------------------------------------
 
         data = np.loadtxt(
             csv_path,
             delimiter=",",
             skiprows=1,
-            usecols=(1, 2, 3, 7, 9),
+            usecols=(1, 2, 3, 4, 7, 9),
             dtype=np.float64,
         )
 
         if data.ndim == 1:
             data = data.reshape(
                 1,
-                5,
+                6,
             )
 
-        if data.shape[1] != 5:
+        if data.shape[1] != 6:
             raise ValueError(
                 f"{sample_id}: invalid loaded "
                 f"data shape {data.shape}"
@@ -407,23 +409,29 @@ class DGCNNCFDDataset(Dataset):
         #
         # Loaded columns:
         #
-        # sampled[:, 3] = wall shear
-        # sampled[:, 4] = HTC
+        # sampled[:, 3] = pressure
+        # sampled[:, 4] = wall shear
+        # sampled[:, 5] = HTC
         #
         # Desired target order:
         #
-        # Y = [HTC, wall shear]
+        # Y = [HTC, wall shear, pressure]
         #
         # shape:
-        #     (7000, 2)
+        #     (7000, 3)
         # -------------------------------------------------------------
 
         htc = sampled[
             :,
-            4:5,
+            5:6,
         ]
 
         wall_shear = sampled[
+            :,
+            4:5,
+        ]
+
+        pressure = sampled[
             :,
             3:4,
         ]
@@ -432,6 +440,7 @@ class DGCNNCFDDataset(Dataset):
             (
                 htc,
                 wall_shear,
+                pressure,
             ),
             axis=1,
         )
@@ -451,7 +460,7 @@ class DGCNNCFDDataset(Dataset):
 
         if y.shape != (
             NUM_POINTS,
-            2,
+            3,
         ):
             raise RuntimeError(
                 f"{sample_id}: invalid "
@@ -579,7 +588,7 @@ def main():
 
             if tuple(y.shape) != (
                 NUM_POINTS,
-                2,
+                3,
             ):
                 raise RuntimeError(
                     f"{sample_id}: "
@@ -689,12 +698,12 @@ def main():
 
     print(
         "Target               : "
-        "[HTC, wall_shear]"
+        "[HTC, wall_shear, pressure]"
     )
 
     print(
         "Target shape         : "
-        "(7000, 2)"
+        "(7000, 3)"
     )
 
     print(

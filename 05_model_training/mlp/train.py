@@ -5,7 +5,7 @@ Input per CFD wall node:
     [x, y, z, velocity]
 
 Target per CFD wall node:
-    [HTC, wall_shear]
+    [HTC, wall_shear, pressure]
 
 Dataset split:
     train : face_0001 ~ face_0080
@@ -166,14 +166,14 @@ def load_one_csv(csv_path: Path, velocity: float) -> tuple[np.ndarray, np.ndarra
         csv_path,
         delimiter=",",
         skiprows=1,
-        usecols=(1, 2, 3, 7, 9),
+        usecols=(1, 2, 3, 4, 7, 9),
         dtype=np.float32,
     )
 
     if data.ndim == 1:
-        data = data.reshape(1, 5)
+        data = data.reshape(1, 6)
 
-    if data.shape[1] != 5:
+    if data.shape[1] != 6:
         raise ValueError(
             f"{csv_path.name}: unexpected loaded shape {data.shape}"
         )
@@ -195,7 +195,11 @@ def load_one_csv(csv_path: Path, velocity: float) -> tuple[np.ndarray, np.ndarra
     )
 
     y = np.stack(
-        (data[:, 4], data[:, 3]),
+        (
+            data[:, 5],  # HTC
+            data[:, 4],  # wall shear
+            data[:, 3],  # pressure
+        ),
         axis=1,
     )
 
@@ -240,7 +244,7 @@ def load_split(csv_dir: Path, split: str) -> tuple[np.ndarray, np.ndarray]:
     if x_all.shape[1] != 4:
         raise RuntimeError(f"{split}: invalid X shape {x_all.shape}")
 
-    if y_all.shape[1] != 2:
+    if y_all.shape[1] != 3:
         raise RuntimeError(f"{split}: invalid Y shape {y_all.shape}")
 
     print(f"{split.upper()} loaded:")
@@ -769,7 +773,7 @@ def train(args) -> None:
     model = PointwiseMLP(
         input_dim=4,
         hidden_dims=(256, 256, 256, 256),
-        output_dim=2,
+        output_dim=3,
     ).to(device)
 
     print()

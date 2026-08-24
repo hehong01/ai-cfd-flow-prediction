@@ -5,7 +5,7 @@ Input per point:
     [x, y, z, velocity]
 
 Target per point:
-    [HTC, wall_shear]
+    [HTC, wall_shear, pressure]
 
 Dataset split:
     train : face_0001 ~ face_0080
@@ -24,7 +24,7 @@ DGCNN input:
         (7000, 4)
 
     Y:
-        (7000, 2)
+        (7000, 3)
 
 The deterministic FPS-selected 7000-point samples are loaded through:
 
@@ -456,7 +456,7 @@ def extract_xy(
 
     if y.ndim != 2:
         raise ValueError(
-            f"Expected Y shape (N,2), "
+            f"Expected Y shape (N,3), "
             f"found {tuple(y.shape)}."
         )
 
@@ -466,9 +466,9 @@ def extract_xy(
             f"found {x.shape[-1]}."
         )
 
-    if y.shape[-1] != 2:
+    if y.shape[-1] != 3:
         raise ValueError(
-            f"Expected Y target dimension 2, "
+            f"Expected Y target dimension 3, "
             f"found {y.shape[-1]}."
         )
 
@@ -1049,7 +1049,7 @@ def predict_loader(
         y_pred_norm
 
     Shapes after concatenation:
-        (number_of_points, 2)
+        (number_of_points, 3)
     """
 
     model.eval()
@@ -1096,7 +1096,7 @@ def predict_loader(
             .numpy()
             .reshape(
                 -1,
-                2,
+                3,
             )
         )
 
@@ -1107,7 +1107,7 @@ def predict_loader(
             .numpy()
             .reshape(
                 -1,
-                2,
+                3,
             )
         )
 
@@ -1311,6 +1311,7 @@ def load_training_checkpoint(
         "checkpoint_type",
         "model_name",
         "input_dim",
+        "output_dim",
         "k",
         "point_count",
         "first_knn_space",
@@ -1344,6 +1345,16 @@ def load_training_checkpoint(
     if int(checkpoint["input_dim"]) != model.input_dim:
         raise RuntimeError(
             "Resume checkpoint input dimension mismatch."
+        )
+
+    if int(checkpoint["output_dim"]) != int(model.output_dim):
+        raise RuntimeError(
+            "Resume checkpoint output dimension mismatch: "
+            f"checkpoint={checkpoint['output_dim']}, "
+            f"model={model.output_dim}. "
+            "A legacy 2-output checkpoint cannot be resumed "
+            "for the 3-target "
+            "[HTC, wall_shear, pressure] model."
         )
 
     if int(checkpoint["k"]) != int(expected_k):
@@ -2129,6 +2140,13 @@ def train(
         weights_only=False,
     )
 
+    if int(checkpoint.get("output_dim", -1)) != 3:
+        raise RuntimeError(
+            "Best-model checkpoint is not a 3-target DGCNN checkpoint: "
+            f"output_dim={checkpoint.get('output_dim')!r}. "
+            "Expected [HTC, wall_shear, pressure]."
+        )
+
     model.load_state_dict(
         checkpoint[
             "model_state_dict"
@@ -2154,6 +2172,20 @@ def train(
             ),
         )
     )
+
+    if y_val_norm.ndim != 2 or y_val_norm.shape[1] != 3:
+        raise RuntimeError(
+            "Unexpected normalized validation-target shape: "
+            f"{y_val_norm.shape}. "
+            "Expected (N, 3)."
+        )
+
+    if y_pred_norm.shape != y_val_norm.shape:
+        raise RuntimeError(
+            "Validation prediction/target shape mismatch: "
+            f"prediction={y_pred_norm.shape}, "
+            f"target={y_val_norm.shape}."
+        )
 
     y_val_physical = (
         scaler.inverse_target(

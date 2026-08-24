@@ -1,24 +1,52 @@
 """
-Interactive 3D diagnostic plots for Fluent wall CSV.
+Interactive 3D visualization for CFD and AI-prediction CSV files.
 
-Purpose
+Modes
+-----
+1) CFD
+   Input:
+       ai-cfd-data/05_cfd_csv/<case>.csv
+
+   Plots:
+       geometry
+       HTC
+       wall shear
+       pressure
+
+2) Prediction
+   Input:
+       ai-cfd-data/07_predictions/<mlp|dgcnn>/prediction_csv/<case>.csv
+
+   Plots:
+       predicted HTC
+       predicted wall shear
+
+Results
 -------
-1. Check whether the exported wall point cloud covers the full face/head.
-2. Check whether the point density is obviously too sparse or uneven.
-3. Inspect HTC, wall shear, and pressure fields on the actual CFD wall nodes.
+Saved under:
 
-Required packages
------------------
-pip install pandas numpy plotly
+    ai-cfd-data/08_results/figures/3d_plot/
 
-Optional:
-pip install scipy
-(scikit not required; scipy is used only for nearest-neighbor spacing statistics)
+Examples
+--------
+From github/07_visualization:
+
+    python 3d_plot.py --type cfd --input face_0003_05mps.csv
+
+    python 3d_plot.py --type prediction --model mlp --input test_face_vel8.csv
+
+    python 3d_plot.py --type prediction --model dgcnn --input test_face_vel8.csv
+
+If the browser feels slow, display fewer points without changing the source CSV:
+
+    python 3d_plot.py --type prediction --model mlp \
+        --input test_face_vel8.csv --max-display-points 5000
 """
 
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -26,50 +54,154 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
-# ======================================================================
-# Default path
-# ======================================================================
+# =============================================================================
+# Project paths
+# =============================================================================
 
-DEFAULT_CSV = Path(
-    r"C:\ai-cfd-flow-prediction\ai-cfd-data\05_cfd_csv\face_0003_05mps.csv"
+THIS_DIR = Path(__file__).resolve().parent
+GITHUB_ROOT = THIS_DIR.parent
+
+if str(GITHUB_ROOT) not in sys.path:
+    sys.path.insert(0, str(GITHUB_ROOT))
+
+from project_paths import DATA_ROOT
+
+
+CFD_DIR = DATA_ROOT / "05_cfd_csv"
+PREDICTION_ROOT = DATA_ROOT / "07_predictions"
+
+RESULT_ROOT = (
+    DATA_ROOT
+    / "08_results"
+    / "figures"
+    / "3d_plot"
 )
 
 
-# ======================================================================
-# Settings
-# ======================================================================
+# =============================================================================
+# Plot settings
+# =============================================================================
 
 MARKER_SIZE = 2.2
 MARKER_OPACITY = 0.90
 
-# False = use the full physical value range.
-# True  = clip only the DISPLAY color range to the 1st~99th percentiles.
-#         Raw values themselves are never modified.
+# False:
+#     use the full physical value range.
+#
+# True:
+#     clip only the DISPLAY color scale to the 1st-99th percentiles.
+#     Raw values themselves are never modified.
 ROBUST_COLOR_RANGE = False
 
-SHOW_IN_BROWSER = True
-SAVE_HTML = True
 
+# =============================================================================
+# Path resolution
+# =============================================================================
 
-# ======================================================================
-# CSV loading
-# ======================================================================
+def resolve_input_path(
+    data_type: str,
+    input_value: str,
+    model: str | None,
+) -> Path:
+    """
+    Resolve either:
+        - an explicit path supplied by the user, or
+        - a bare filename in the project's standard data folder.
+    """
+    path = Path(input_value)
 
-def load_cfd_csv(csv_path: Path) -> pd.DataFrame:
-    if not csv_path.exists():
+    if path.is_file():
+        return path.resolve()
+
+    if path.is_absolute():
         raise FileNotFoundError(
-            f"CSV file not found:\n{csv_path}"
+            f"CSV file not found:\n{path}"
         )
 
-    df = pd.read_csv(csv_path)
+    if data_type == "cfd":
+        candidate = CFD_DIR / path
 
-    # Fluent exports can contain leading spaces in column names.
+    else:
+        if model is None:
+            raise ValueError(
+                "--model is required when --type prediction is used."
+            )
+
+        candidate = (
+            PREDICTION_ROOT
+            / model
+            / "prediction_csv"
+            / path
+        )
+
+    candidate = candidate.resolve()
+
+    if not candidate.is_file():
+        raise FileNotFoundError(
+            f"CSV file not found:\n{candidate}"
+        )
+
+    return candidate
+
+
+def build_output_dir(
+    data_type: str,
+    csv_path: Path,
+    model: str | None,
+) -> Path:
+    """
+    Result structure:
+
+        08_results/
+        └── figures/
+            └── 3d_plot/
+                ├── cfd/
+                │   └── <case>/
+                ├── mlp/
+                │   └── <case>/
+                └── dgcnn/
+                    └── <case>/
+    """
+    if data_type == "cfd":
+        branch = "cfd"
+    else:
+        if model is None:
+            raise ValueError(
+                "Prediction output requires a model name."
+            )
+        branch = model
+
+    output_dir = (
+        RESULT_ROOT
+        / branch
+        / csv_path.stem
+    )
+
+    output_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    return output_dir
+
+
+# =============================================================================
+# CSV loading
+# =============================================================================
+
+def load_cfd_csv(
+    csv_path: Path,
+) -> pd.DataFrame:
+    df = pd.read_csv(
+        csv_path
+    )
+
     df.columns = [
         str(column).strip()
         for column in df.columns
     ]
 
-    required_columns = [
+    required = (
         "nodenumber",
         "x-coordinate",
         "y-coordinate",
@@ -77,30 +209,30 @@ def load_cfd_csv(csv_path: Path) -> pd.DataFrame:
         "pressure",
         "wall-shear",
         "heat-transfer-coef",
-    ]
+    )
 
     missing = [
         column
-        for column in required_columns
+        for column in required
         if column not in df.columns
     ]
 
     if missing:
         raise ValueError(
-            "Required columns are missing:\n"
+            "CFD CSV is missing required columns:\n"
             + "\n".join(missing)
             + "\n\nAvailable columns:\n"
             + "\n".join(df.columns)
         )
 
-    numeric_columns = [
+    numeric_columns = (
         "x-coordinate",
         "y-coordinate",
         "z-coordinate",
         "pressure",
         "wall-shear",
         "heat-transfer-coef",
-    ]
+    )
 
     for column in numeric_columns:
         df[column] = pd.to_numeric(
@@ -108,16 +240,140 @@ def load_cfd_csv(csv_path: Path) -> pd.DataFrame:
             errors="raise",
         )
 
+    values = df[
+        list(numeric_columns)
+    ].to_numpy(dtype=np.float64)
+
+    if len(df) == 0:
+        raise ValueError(
+            "CFD CSV contains no rows."
+        )
+
+    if not np.isfinite(values).all():
+        raise ValueError(
+            "CFD CSV contains NaN or Inf."
+        )
+
     return df
 
 
-# ======================================================================
-# Diagnostics
-# ======================================================================
+def load_prediction_csv(
+    csv_path: Path,
+) -> pd.DataFrame:
+    df = pd.read_csv(
+        csv_path
+    )
 
-def print_basic_diagnostics(
+    df.columns = [
+        str(column).strip()
+        for column in df.columns
+    ]
+
+    required = (
+        "x",
+        "y",
+        "z",
+        "velocity",
+        "predicted_htc",
+        "predicted_wall_shear",
+    )
+
+    missing = [
+        column
+        for column in required
+        if column not in df.columns
+    ]
+
+    if missing:
+        raise ValueError(
+            "Prediction CSV is missing required columns:\n"
+            + "\n".join(missing)
+            + "\n\nAvailable columns:\n"
+            + "\n".join(df.columns)
+        )
+
+    for column in required:
+        df[column] = pd.to_numeric(
+            df[column],
+            errors="raise",
+        )
+
+    values = df[
+        list(required)
+    ].to_numpy(dtype=np.float64)
+
+    if len(df) == 0:
+        raise ValueError(
+            "Prediction CSV contains no rows."
+        )
+
+    if not np.isfinite(values).all():
+        raise ValueError(
+            "Prediction CSV contains NaN or Inf."
+        )
+
+    velocity = df[
+        "velocity"
+    ].to_numpy(dtype=np.float64)
+
+    if not np.allclose(
+        velocity,
+        velocity[0],
+    ):
+        raise ValueError(
+            "Prediction CSV must contain one constant "
+            "inlet velocity for the whole geometry."
+        )
+
+    return df
+
+
+# =============================================================================
+# Optional display downsampling
+# =============================================================================
+
+def select_display_rows(
+    df: pd.DataFrame,
+    max_display_points: int | None,
+) -> pd.DataFrame:
+    """
+    Reduce only the number of points sent to Plotly.
+
+    The source CSV and diagnostics remain unchanged.
+
+    Deterministic evenly spaced row indices are used so repeated runs
+    produce the same visualization.
+    """
+    if max_display_points is None:
+        return df
+
+    if max_display_points <= 0:
+        return df
+
+    if len(df) <= max_display_points:
+        return df
+
+    indices = np.linspace(
+        0,
+        len(df) - 1,
+        num=max_display_points,
+        dtype=np.int64,
+    )
+
+    return (
+        df.iloc[indices]
+        .reset_index(drop=True)
+    )
+
+
+# =============================================================================
+# Diagnostics
+# =============================================================================
+
+def print_cfd_summary(
     df: pd.DataFrame,
     csv_path: Path,
+    display_count: int,
 ) -> None:
     xyz = df[
         [
@@ -132,160 +388,136 @@ def print_basic_diagnostics(
         axis=0,
     )
 
-    duplicate_xyz = int(
-        df.duplicated(
-            [
-                "x-coordinate",
-                "y-coordinate",
-                "z-coordinate",
-            ]
-        ).sum()
-    )
-
-    numeric = df.select_dtypes(
-        include=[np.number]
-    )
-
-    nan_count = int(
-        numeric.isna().sum().sum()
-    )
-
-    inf_count = int(
-        np.isinf(
-            numeric.to_numpy(
-                dtype=np.float64,
-                copy=False,
-            )
-        ).sum()
-    )
-
     print()
     print("=" * 78)
-    print("CFD WALL CSV DIAGNOSTICS")
+    print("CFD 3D VISUALIZATION")
     print("=" * 78)
-    print("CSV             :", csv_path)
-    print(f"Wall points     : {len(df):,}")
-    print(f"Duplicate XYZ   : {duplicate_xyz:,}")
-    print(f"NaN values      : {nan_count:,}")
-    print(f"Inf values      : {inf_count:,}")
+    print(f"CSV            : {csv_path}")
+    print(f"Source points  : {len(df):,}")
+    print(f"Display points : {display_count:,}")
     print()
-
-    print("[COORDINATE RANGE]")
+    print("[GEOMETRY]")
     print(
-        "X : "
-        f"{xyz[:, 0].min(): .6f} ~ {xyz[:, 0].max(): .6f} m"
-        f"   extent = {extents[0] * 1000:.2f} mm"
+        f"X : {xyz[:, 0].min(): .6f} ~ "
+        f"{xyz[:, 0].max(): .6f} m"
+        f"   extent={extents[0] * 1000:.2f} mm"
     )
     print(
-        "Y : "
-        f"{xyz[:, 1].min(): .6f} ~ {xyz[:, 1].max(): .6f} m"
-        f"   extent = {extents[1] * 1000:.2f} mm"
+        f"Y : {xyz[:, 1].min(): .6f} ~ "
+        f"{xyz[:, 1].max(): .6f} m"
+        f"   extent={extents[1] * 1000:.2f} mm"
     )
     print(
-        "Z : "
-        f"{xyz[:, 2].min(): .6f} ~ {xyz[:, 2].max(): .6f} m"
-        f"   extent = {extents[2] * 1000:.2f} mm"
+        f"Z : {xyz[:, 2].min(): .6f} ~ "
+        f"{xyz[:, 2].max(): .6f} m"
+        f"   extent={extents[2] * 1000:.2f} mm"
     )
     print()
+    print("[CFD FIELDS]")
 
-    for column, unit in (
-        ("heat-transfer-coef", "W/m²K"),
-        ("wall-shear", "Pa"),
-        ("pressure", "Pa"),
+    for column, label, unit in (
+        (
+            "heat-transfer-coef",
+            "HTC",
+            "W/(m²·K)",
+        ),
+        (
+            "wall-shear",
+            "Wall shear",
+            "Pa",
+        ),
+        (
+            "pressure",
+            "Pressure",
+            "Pa",
+        ),
     ):
-        values = df[column].to_numpy(
-            dtype=np.float64
-        )
+        values = df[
+            column
+        ].to_numpy(dtype=np.float64)
 
         print(
-            f"{column:<20s}"
-            f" min={values.min(): .6g}"
-            f"  mean={values.mean(): .6g}"
-            f"  max={values.max(): .6g}"
-            f"  [{unit}]"
+            f"{label:<11}: "
+            f"min={values.min():.6f}, "
+            f"mean={values.mean():.6f}, "
+            f"max={values.max():.6f} {unit}"
         )
 
     print("=" * 78)
 
 
-def print_spacing_diagnostics(
+def print_prediction_summary(
     df: pd.DataFrame,
+    csv_path: Path,
+    model: str,
+    display_count: int,
 ) -> None:
-    """
-    Nearest-neighbor spacing is a useful quick check of point-cloud resolution.
-    This step is optional; the plots still work when scipy is not installed.
-    """
-    try:
-        from scipy.spatial import cKDTree
-    except ImportError:
-        print()
-        print(
-            "[SPACING] scipy not installed -> "
-            "nearest-neighbor spacing check skipped."
-        )
-        print(
-            "Optional install: pip install scipy"
-        )
-        return
-
     xyz = df[
-        [
-            "x-coordinate",
-            "y-coordinate",
-            "z-coordinate",
-        ]
+        ["x", "y", "z"]
     ].to_numpy(dtype=np.float64)
 
-    tree = cKDTree(
-        xyz
-    )
-
-    distances, _ = tree.query(
+    extents = np.ptp(
         xyz,
-        k=2,
+        axis=0,
     )
 
-    nearest = distances[:, 1]
+    htc = df[
+        "predicted_htc"
+    ].to_numpy(dtype=np.float64)
 
-    p05, p25, p50, p75, p95, p99 = np.percentile(
-        nearest,
-        [5, 25, 50, 75, 95, 99],
-    )
+    shear = df[
+        "predicted_wall_shear"
+    ].to_numpy(dtype=np.float64)
 
     print()
     print("=" * 78)
-    print("NEAREST-NEIGHBOR SPACING")
+    print("AI PREDICTION 3D VISUALIZATION")
     print("=" * 78)
+    print(f"Model          : {model.upper()}")
+    print(f"CSV            : {csv_path}")
+    print(f"Source points  : {len(df):,}")
+    print(f"Display points : {display_count:,}")
     print(
-        f"Mean   : {nearest.mean() * 1000:.3f} mm"
+        f"Velocity       : "
+        f"{df['velocity'].iloc[0]:g} m/s"
+    )
+    print()
+    print("[GEOMETRY]")
+    print(
+        f"X : {xyz[:, 0].min(): .6f} ~ "
+        f"{xyz[:, 0].max(): .6f} m"
+        f"   extent={extents[0] * 1000:.2f} mm"
     )
     print(
-        f"P05    : {p05 * 1000:.3f} mm"
+        f"Y : {xyz[:, 1].min(): .6f} ~ "
+        f"{xyz[:, 1].max(): .6f} m"
+        f"   extent={extents[1] * 1000:.2f} mm"
     )
     print(
-        f"P25    : {p25 * 1000:.3f} mm"
+        f"Z : {xyz[:, 2].min(): .6f} ~ "
+        f"{xyz[:, 2].max(): .6f} m"
+        f"   extent={extents[2] * 1000:.2f} mm"
+    )
+    print()
+    print("[PREDICTION]")
+    print(
+        "HTC        : "
+        f"min={htc.min():.6f}, "
+        f"mean={htc.mean():.6f}, "
+        f"max={htc.max():.6f} W/(m²·K)"
     )
     print(
-        f"Median : {p50 * 1000:.3f} mm"
-    )
-    print(
-        f"P75    : {p75 * 1000:.3f} mm"
-    )
-    print(
-        f"P95    : {p95 * 1000:.3f} mm"
-    )
-    print(
-        f"P99    : {p99 * 1000:.3f} mm"
-    )
-    print(
-        f"Max    : {nearest.max() * 1000:.3f} mm"
+        "Wall shear : "
+        f"min={shear.min():.6f}, "
+        f"mean={shear.mean():.6f}, "
+        f"max={shear.max():.6f} Pa"
     )
     print("=" * 78)
 
 
-# ======================================================================
+# =============================================================================
 # Plot helpers
-# ======================================================================
+# =============================================================================
 
 def base_scene() -> dict:
     return dict(
@@ -296,31 +528,61 @@ def base_scene() -> dict:
     )
 
 
+def color_marker(
+    values: np.ndarray,
+    unit: str,
+    full_values: np.ndarray,
+) -> dict:
+    marker = dict(
+        size=MARKER_SIZE,
+        color=values,
+        colorscale="Turbo",
+        opacity=MARKER_OPACITY,
+        showscale=True,
+        colorbar=dict(
+            title=unit,
+        ),
+    )
+
+    # Keep the displayed color range tied to the full source data,
+    # even when Plotly itself receives only a subset of rows.
+    if ROBUST_COLOR_RANGE:
+        cmin, cmax = np.percentile(
+            full_values,
+            [1, 99],
+        )
+    else:
+        cmin = float(
+            np.min(full_values)
+        )
+        cmax = float(
+            np.max(full_values)
+        )
+
+    marker["cmin"] = float(cmin)
+    marker["cmax"] = float(cmax)
+
+    return marker
+
+
 def make_geometry_plot(
-    df: pd.DataFrame,
+    x,
+    y,
+    z,
+    title: str,
 ) -> go.Figure:
-    """
-    Uniform-color geometry view.
-    Use this first to judge point density without field colors distracting you.
-    """
     fig = go.Figure(
         data=[
             go.Scatter3d(
-                x=df["x-coordinate"],
-                y=df["y-coordinate"],
-                z=df["z-coordinate"],
+                x=x,
+                y=y,
+                z=z,
                 mode="markers",
                 marker=dict(
                     size=MARKER_SIZE,
                     opacity=MARKER_OPACITY,
                 ),
-                customdata=np.column_stack(
-                    [
-                        df["nodenumber"],
-                    ]
-                ),
                 hovertemplate=(
-                    "node=%{customdata[0]}<br>"
                     "x=%{x:.6f} m<br>"
                     "y=%{y:.6f} m<br>"
                     "z=%{z:.6f} m"
@@ -331,9 +593,7 @@ def make_geometry_plot(
     )
 
     fig.update_layout(
-        title=(
-            f"CFD Wall Geometry — {len(df):,} points"
-        ),
+        title=title,
         scene=base_scene(),
         margin=dict(
             l=0,
@@ -347,59 +607,66 @@ def make_geometry_plot(
 
 
 def make_field_plot(
-    df: pd.DataFrame,
-    value_column: str,
+    x,
+    y,
+    z,
+    values: np.ndarray,
+    full_values: np.ndarray,
     title: str,
+    value_label: str,
     unit: str,
+    velocity: float | None = None,
 ) -> go.Figure:
-    values = df[value_column].to_numpy(
-        dtype=np.float64
-    )
-
-    marker = dict(
-        size=MARKER_SIZE,
-        color=values,
-        colorscale="Viridis",
-        opacity=MARKER_OPACITY,
-        showscale=True,
-        colorbar=dict(
-            title=f"{value_column}<br>{unit}"
-        ),
-    )
-
-    if ROBUST_COLOR_RANGE:
-        cmin, cmax = np.percentile(
-            values,
-            [1, 99],
+    if velocity is None:
+        customdata = np.column_stack(
+            [values]
         )
 
-        marker["cmin"] = float(cmin)
-        marker["cmax"] = float(cmax)
+        hovertemplate = (
+            "x=%{x:.6f} m<br>"
+            "y=%{y:.6f} m<br>"
+            "z=%{z:.6f} m<br>"
+            f"{value_label}=%{{customdata[0]:.6g}} {unit}"
+            "<extra></extra>"
+        )
 
-    customdata = np.column_stack(
-        [
-            df["nodenumber"].to_numpy(),
-            values,
-        ]
-    )
+    else:
+        velocity_column = np.full(
+            len(values),
+            velocity,
+            dtype=np.float64,
+        )
+
+        customdata = np.column_stack(
+            (
+                values,
+                velocity_column,
+            )
+        )
+
+        hovertemplate = (
+            "x=%{x:.6f} m<br>"
+            "y=%{y:.6f} m<br>"
+            "z=%{z:.6f} m<br>"
+            f"{value_label}=%{{customdata[0]:.6g}} {unit}<br>"
+            "velocity=%{customdata[1]:.6g} m/s"
+            "<extra></extra>"
+        )
 
     fig = go.Figure(
         data=[
             go.Scatter3d(
-                x=df["x-coordinate"],
-                y=df["y-coordinate"],
-                z=df["z-coordinate"],
+                x=x,
+                y=y,
+                z=z,
                 mode="markers",
-                marker=marker,
-                customdata=customdata,
-                hovertemplate=(
-                    "node=%{customdata[0]}<br>"
-                    "x=%{x:.6f} m<br>"
-                    "y=%{y:.6f} m<br>"
-                    "z=%{z:.6f} m<br>"
-                    f"{value_column}=%{{customdata[1]:.6g}} {unit}"
-                    "<extra></extra>"
+                marker=color_marker(
+                    values=values,
+                    unit=unit,
+                    full_values=full_values,
                 ),
+                customdata=customdata,
+                hovertemplate=hovertemplate,
             )
         ]
     )
@@ -418,215 +685,354 @@ def make_field_plot(
     return fig
 
 
-def make_projection_plot(
-    df: pd.DataFrame,
-    x_column: str,
-    y_column: str,
-    title: str,
-) -> go.Figure:
-    """
-    2D orthographic projection.
-    This is often easier than 3D for spotting holes or sparse regions.
-    """
-    fig = go.Figure(
-        data=[
-            go.Scattergl(
-                x=df[x_column],
-                y=df[y_column],
-                mode="markers",
-                marker=dict(
-                    size=3,
-                    opacity=0.85,
+# =============================================================================
+# CFD plots
+# =============================================================================
+
+def build_cfd_plots(
+    full_df: pd.DataFrame,
+    display_df: pd.DataFrame,
+) -> tuple[tuple[go.Figure, str], ...]:
+    x = display_df["x-coordinate"]
+    y = display_df["y-coordinate"]
+    z = display_df["z-coordinate"]
+
+    htc = display_df[
+        "heat-transfer-coef"
+    ].to_numpy(dtype=np.float64)
+
+    shear = display_df[
+        "wall-shear"
+    ].to_numpy(dtype=np.float64)
+
+    pressure = display_df[
+        "pressure"
+    ].to_numpy(dtype=np.float64)
+
+    full_htc = full_df[
+        "heat-transfer-coef"
+    ].to_numpy(dtype=np.float64)
+
+    full_shear = full_df[
+        "wall-shear"
+    ].to_numpy(dtype=np.float64)
+
+    full_pressure = full_df[
+        "pressure"
+    ].to_numpy(dtype=np.float64)
+
+    return (
+        (
+            make_geometry_plot(
+                x,
+                y,
+                z,
+                (
+                    "CFD Wall Geometry — "
+                    f"{len(display_df):,} displayed / "
+                    f"{len(full_df):,} source points"
                 ),
-                hovertemplate=(
-                    f"{x_column}=%{{x:.6f}} m<br>"
-                    f"{y_column}=%{{y:.6f}} m"
-                    "<extra></extra>"
-                ),
-            )
-        ]
+            ),
+            "01_geometry_3d.html",
+        ),
+        (
+            make_field_plot(
+                x=x,
+                y=y,
+                z=z,
+                values=htc,
+                full_values=full_htc,
+                title="CFD — Heat Transfer Coefficient",
+                value_label="HTC",
+                unit="W/(m²·K)",
+            ),
+            "02_htc_3d.html",
+        ),
+        (
+            make_field_plot(
+                x=x,
+                y=y,
+                z=z,
+                values=shear,
+                full_values=full_shear,
+                title="CFD — Wall Shear Stress",
+                value_label="Wall shear",
+                unit="Pa",
+            ),
+            "03_wall_shear_3d.html",
+        ),
+        (
+            make_field_plot(
+                x=x,
+                y=y,
+                z=z,
+                values=pressure,
+                full_values=full_pressure,
+                title="CFD — Pressure",
+                value_label="Pressure",
+                unit="Pa",
+            ),
+            "04_pressure_3d.html",
+        ),
     )
 
-    fig.update_layout(
-        title=title,
-        xaxis=dict(
-            title=f"{x_column} (m)",
-            scaleanchor="y",
-            scaleratio=1,
+
+# =============================================================================
+# Prediction plots
+# =============================================================================
+
+def build_prediction_plots(
+    full_df: pd.DataFrame,
+    display_df: pd.DataFrame,
+    model: str,
+) -> tuple[tuple[go.Figure, str], ...]:
+    x = display_df["x"]
+    y = display_df["y"]
+    z = display_df["z"]
+
+    velocity = float(
+        full_df["velocity"].iloc[0]
+    )
+
+    htc = display_df[
+        "predicted_htc"
+    ].to_numpy(dtype=np.float64)
+
+    shear = display_df[
+        "predicted_wall_shear"
+    ].to_numpy(dtype=np.float64)
+
+    full_htc = full_df[
+        "predicted_htc"
+    ].to_numpy(dtype=np.float64)
+
+    full_shear = full_df[
+        "predicted_wall_shear"
+    ].to_numpy(dtype=np.float64)
+
+    model_label = model.upper()
+
+    return (
+        (
+            make_field_plot(
+                x=x,
+                y=y,
+                z=z,
+                values=htc,
+                full_values=full_htc,
+                title=f"{model_label} — Predicted HTC",
+                value_label="Predicted HTC",
+                unit="W/(m²·K)",
+                velocity=velocity,
+            ),
+            "01_predicted_htc_3d.html",
         ),
-        yaxis=dict(
-            title=f"{y_column} (m)",
-        ),
-        margin=dict(
-            l=60,
-            r=20,
-            b=60,
-            t=50,
+        (
+            make_field_plot(
+                x=x,
+                y=y,
+                z=z,
+                values=shear,
+                full_values=full_shear,
+                title=f"{model_label} — Predicted Wall Shear",
+                value_label="Predicted wall shear",
+                unit="Pa",
+                velocity=velocity,
+            ),
+            "02_predicted_wall_shear_3d.html",
         ),
     )
 
-    return fig
 
-
-# ======================================================================
-# Output
-# ======================================================================
+# =============================================================================
+# Save / show
+# =============================================================================
 
 def save_and_show(
     fig: go.Figure,
-    html_path: Path,
+    output_path: Path,
+    show: bool,
 ) -> None:
-    if SAVE_HTML:
-        fig.write_html(
-            html_path,
-            include_plotlyjs="cdn",
-        )
-        print(
-            "Saved:",
-            html_path,
-        )
+    fig.write_html(
+        output_path,
+        include_plotlyjs="cdn",
+    )
 
-    if SHOW_IN_BROWSER:
+    print(
+        f"Saved: {output_path}"
+    )
+
+    if show:
         fig.show()
 
 
-# ======================================================================
-# Main
-# ======================================================================
+# =============================================================================
+# CLI
+# =============================================================================
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Inspect Fluent wall CSV geometry and CFD fields in interactive 3D."
+            "Interactive 3D visualization for Fluent CFD "
+            "and AI prediction CSV files."
         )
     )
 
     parser.add_argument(
-        "--csv",
-        type=Path,
-        default=DEFAULT_CSV,
+        "--type",
+        choices=(
+            "cfd",
+            "prediction",
+        ),
+        required=True,
+        dest="data_type",
         help=(
-            "Path to one Fluent wall CSV. "
-            f"Default: {DEFAULT_CSV}"
+            "CSV type: 'cfd' for Fluent wall CSV, "
+            "'prediction' for MLP/DGCNN output CSV."
         ),
     )
 
-    args = parser.parse_args()
-
-    csv_path = args.csv.resolve()
-
-    df = load_cfd_csv(
-        csv_path
+    parser.add_argument(
+        "--input",
+        required=True,
+        help=(
+            "CSV filename or path."
+        ),
     )
 
-    print_basic_diagnostics(
-        df,
-        csv_path,
+    parser.add_argument(
+        "--model",
+        choices=(
+            "mlp",
+            "dgcnn",
+        ),
+        default=None,
+        help=(
+            "Required only for --type prediction."
+        ),
     )
 
-    print_spacing_diagnostics(
-        df
+    parser.add_argument(
+        "--max-display-points",
+        type=int,
+        default=None,
+        help=(
+            "Optional maximum number of points sent to Plotly. "
+            "Use this if browser interaction is slow. "
+            "The source CSV and reported statistics are unchanged."
+        ),
     )
 
-    output_dir = (
-        csv_path.parent
-        / f"{csv_path.stem}_diagnostic_plots"
+    parser.add_argument(
+        "--no-show",
+        action="store_true",
+        help=(
+            "Save HTML files without opening browser windows."
+        ),
     )
 
-    output_dir.mkdir(
-        parents=True,
-        exist_ok=True,
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+
+    if (
+        args.data_type == "prediction"
+        and args.model is None
+    ):
+        raise ValueError(
+            "--model mlp or --model dgcnn is required "
+            "for prediction visualization."
+        )
+
+    if (
+        args.max_display_points is not None
+        and args.max_display_points < 0
+    ):
+        raise ValueError(
+            "--max-display-points must be zero or positive."
+        )
+
+    csv_path = resolve_input_path(
+        data_type=args.data_type,
+        input_value=args.input,
+        model=args.model,
     )
 
-    plots = [
-        (
-            make_geometry_plot(
-                df
-            ),
-            output_dir / "01_geometry_3d.html",
-        ),
-        (
-            make_field_plot(
-                df,
-                "heat-transfer-coef",
-                "3D Heat Transfer Coefficient",
-                "W/m²K",
-            ),
-            output_dir / "02_htc_3d.html",
-        ),
-        (
-            make_field_plot(
-                df,
-                "wall-shear",
-                "3D Wall Shear Stress",
-                "Pa",
-            ),
-            output_dir / "03_wall_shear_3d.html",
-        ),
-        (
-            make_field_plot(
-                df,
-                "pressure",
-                "3D Pressure",
-                "Pa",
-            ),
-            output_dir / "04_pressure_3d.html",
-        ),
-        (
-            make_projection_plot(
-                df,
-                "x-coordinate",
-                "y-coordinate",
-                "XY Projection — point coverage check",
-            ),
-            output_dir / "05_xy_projection.html",
-        ),
-        (
-            make_projection_plot(
-                df,
-                "x-coordinate",
-                "z-coordinate",
-                "XZ Projection — point coverage check",
-            ),
-            output_dir / "06_xz_projection.html",
-        ),
-        (
-            make_projection_plot(
-                df,
-                "y-coordinate",
-                "z-coordinate",
-                "YZ Projection — point coverage check",
-            ),
-            output_dir / "07_yz_projection.html",
-        ),
-    ]
+    output_dir = build_output_dir(
+        data_type=args.data_type,
+        csv_path=csv_path,
+        model=args.model,
+    )
+
+    if args.data_type == "cfd":
+        full_df = load_cfd_csv(
+            csv_path
+        )
+
+        display_df = select_display_rows(
+            full_df,
+            args.max_display_points,
+        )
+
+        print_cfd_summary(
+            df=full_df,
+            csv_path=csv_path,
+            display_count=len(display_df),
+        )
+
+        plots = build_cfd_plots(
+            full_df=full_df,
+            display_df=display_df,
+        )
+
+    else:
+        full_df = load_prediction_csv(
+            csv_path
+        )
+
+        display_df = select_display_rows(
+            full_df,
+            args.max_display_points,
+        )
+
+        print_prediction_summary(
+            df=full_df,
+            csv_path=csv_path,
+            model=args.model,
+            display_count=len(display_df),
+        )
+
+        plots = build_prediction_plots(
+            full_df=full_df,
+            display_df=display_df,
+            model=args.model,
+        )
 
     print()
-    print("=" * 78)
-    print("GENERATING PLOTS")
-    print("=" * 78)
+    print("[GENERATING 3D PLOTS]")
 
-    for fig, html_path in plots:
+    for fig, filename in plots:
         save_and_show(
-            fig,
-            html_path,
+            fig=fig,
+            output_path=(
+                output_dir
+                / filename
+            ),
+            show=not args.no_show,
         )
 
     print()
     print("=" * 78)
-    print("DONE")
+    print("3D VISUALIZATION COMPLETE")
     print("=" * 78)
-    print("Output directory:")
-    print(output_dir)
-    print()
-    print("Recommended inspection order:")
-    print("1. 01_geometry_3d.html")
-    print("2. 05_xy_projection.html")
-    print("3. 06_xz_projection.html")
-    print("4. 07_yz_projection.html")
-    print("5. HTC / wall shear / pressure plots")
-    print("=" * 78)
+    print(
+        f"Output folder: {output_dir}"
+    )
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

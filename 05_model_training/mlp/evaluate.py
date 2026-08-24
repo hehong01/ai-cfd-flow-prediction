@@ -1,6 +1,12 @@
 """
 Evaluate a trained point-wise MLP on the held-out CFD test set.
 
+Input per CFD wall node:
+    [x, y, z, velocity]
+
+Target per CFD wall node:
+    [HTC, wall_shear, pressure]
+
 Test split:
     face_0091 ~ face_0100
     10 faces x 3 velocities = 30 CSV files
@@ -144,6 +150,14 @@ def load_model(
         raise ValueError(
             "Unexpected model type in checkpoint: "
             f"{checkpoint['model_name']}"
+        )
+
+    if int(checkpoint["output_dim"]) != 3:
+        raise ValueError(
+            "Legacy or incompatible MLP checkpoint: "
+            f"expected output_dim=3 "
+            f"[HTC, wall_shear, pressure], "
+            f"found output_dim={checkpoint['output_dim']}."
         )
 
     model = PointwiseMLP(
@@ -390,6 +404,21 @@ def evaluate(args) -> None:
         time.perf_counter()
         - start
     )
+
+    if y_true_norm.ndim != 2 or y_true_norm.shape[1] != 3:
+        raise RuntimeError(
+            "Unexpected normalized target shape: "
+            f"{y_true_norm.shape}. "
+            "Expected (N, 3) for "
+            "[HTC, wall_shear, pressure]."
+        )
+
+    if y_pred_norm.shape != y_true_norm.shape:
+        raise RuntimeError(
+            "Prediction/target shape mismatch: "
+            f"prediction={y_pred_norm.shape}, "
+            f"target={y_true_norm.shape}."
+        )
 
     print(
         f"Inference complete : "

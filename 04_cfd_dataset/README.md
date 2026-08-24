@@ -61,16 +61,18 @@ Input
 [x, y, z, velocity]
 
 Target
-[HTC, wall shear]
+[HTC, wall shear, pressure]
 ```
 
 where:
 
 ```text
-HTC = heat-transfer-coef
+HTC        = heat-transfer-coef
+wall shear = wall-shear
+pressure   = pressure
 ```
 
-The remaining CFD quantities are retained in the original CSV files but are not used as model inputs.
+The three prediction targets are taken directly from the Fluent wall-surface CSV: `heat-transfer-coef`, `wall-shear`, and `pressure`. The remaining CFD quantities are retained in the original CSV files but are not used as model inputs or targets.
 
 ---
 
@@ -417,9 +419,9 @@ and:
 
 ```text
 Target Y
-shape: (7000, 2)
+shape: (7000, 3)
 
-[HTC, wall shear]
+[HTC, wall shear, pressure]
 ```
 
 For one point:
@@ -429,10 +431,10 @@ Input
 [x_i, y_i, z_i, U]
 
 Target
-[HTC_i, wall_shear_i]
+[HTC_i, wall_shear_i, pressure_i]
 ```
 
-The FPS index is applied to the coordinates and target quantities simultaneously, so the correspondence between geometry and CFD results is preserved.
+The same FPS row indices are applied to coordinates, HTC, wall shear, and pressure simultaneously, so the correspondence between geometry and all three CFD targets is preserved.
 
 ---
 
@@ -442,14 +444,14 @@ A single DGCNN sample has:
 
 ```text
 X.shape = (7000, 4)
-Y.shape = (7000, 2)
+Y.shape = (7000, 3)
 ```
 
 For a batch of size `B`:
 
 ```text
 X.shape = (B, 7000, 4)
-Y.shape = (B, 7000, 2)
+Y.shape = (B, 7000, 3)
 ```
 
 Depending on the DGCNN implementation, the input tensor may later be rearranged to:
@@ -509,8 +511,8 @@ Total samples checked : 300
 Points / sample       : 7000
 Input                : [x, y, z, velocity]
 Input shape          : (7000, 4)
-Target               : [HTC, wall_shear]
-Target shape         : (7000, 2)
+Target               : [HTC, wall_shear, pressure]
+Target shape         : (7000, 3)
 Tensor dtype         : torch.float32
 ```
 
@@ -530,14 +532,14 @@ was validated across all 300 samples.
 
 ## 12. MLP Baseline
 
-The MLP baseline uses the same physical input and target definitions:
+The MLP baseline uses the same physical input and three-target definition:
 
 ```text
 Input
 [x, y, z, velocity]
 
 Target
-[HTC, wall shear]
+[HTC, wall shear, pressure]
 ```
 
 However, the MLP treats each surface node independently.
@@ -547,6 +549,7 @@ Conceptually:
 ```text
 HTC        = f(x, y, z, U)
 wall shear = g(x, y, z, U)
+pressure   = h(x, y, z, U)
 ```
 
 Therefore, different CFD geometries do not need to contain the same number of nodes for MLP training.
@@ -632,6 +635,7 @@ for prediction of:
 ```text
 heat-transfer coefficient
 wall shear
+pressure
 ```
 
 from:
