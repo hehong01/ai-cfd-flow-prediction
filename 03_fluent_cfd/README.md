@@ -451,7 +451,7 @@ Share Topology self-intersection detected?
          ↓
        scdoc_to_cfd.py returns exit code 42
          ↓
-       master_run.py rebuilds only that geometry at 4 mm
+       run_cfd_generation.py rebuilds only that geometry at 4 mm
          ↓
        retry Fluent once
 ```
@@ -500,7 +500,7 @@ Apply Share Topology
 
 and returns dedicated exit code `42`.
 
-`master_run.py` rebuilds only the failed SCDOC at 4 mm and retries Fluent once.
+`run_cfd_generation.py` rebuilds only the failed SCDOC at 4 mm and retries Fluent once.
 
 ### 4. Duplicate Coordinate Columns in CSV Export
 

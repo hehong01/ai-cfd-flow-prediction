@@ -138,7 +138,7 @@ For this reason, the script exposes the Shrinkwrap size as a command-line option
 python .\02_spaceclaim\stl_to_scdoc.py --face face_0001 --shrinkwrap-mm 4.0 --overwrite
 ```
 
-The repository-level `master_run.py` uses this 4 mm setting only as the validated fallback for that specific Fluent failure.
+The repository-level `run_cfd_generation.py` uses this 4 mm setting only as the validated fallback for that specific Fluent failure.
 
 ## Usage
 
